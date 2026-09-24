@@ -1,6 +1,6 @@
 /* Riznica: App-Hülle für den Offline-Start. Kein Backup für Daten, die bleiben im localStorage. */
 const PREFIX="riznica-"+encodeURIComponent(self.registration.scope)+"-";
-const CACHE=PREFIX+"v7";
+const CACHE=PREFIX+"v8";
 const CORE=["./","./index.html"];
 const OPTIONAL=["./icon-180.png","./icon-192.png","./icon-512.png","./manifest.webmanifest"];
 self.addEventListener("install",e=>{ e.waitUntil((async()=>{ const c=await caches.open(CACHE); await c.addAll(CORE); await Promise.all(OPTIONAL.map(a=>c.add(a).catch(()=>{}))); })()); });
