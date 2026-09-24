@@ -199,13 +199,19 @@
   .drop.over{border-color:var(--brass); background:var(--brass-tint)}
   .drop b{display:block; color:var(--ink); font-weight:600; margin-bottom:4px; font-size:15px}
   .drop input{display:none}
-  .prev{max-height:50vh; overflow:auto; border:1px solid var(--line); border-radius:12px; padding:4px 8px; margin-top:8px}
-  .prev .tx{padding:8px 2px}
+  .prev{margin-top:4px}
+  .prev .tx{padding:9px 2px; border-bottom:1px solid var(--line); flex-wrap:wrap; cursor:default}
+  .prev .tx:last-child{border-bottom:0}
+  .prev .tx .body{flex:1 1 160px}
+  .prev .tx .p{white-space:normal; line-height:1.35}
+  .prev .tx .meta{font-size:11.5px; color:var(--ink-faint); margin-top:2px}
+  .prev .tx .cpick{margin-left:auto}
   .prev .tx .cpick{flex:none}
   .cpick{appearance:none; -webkit-appearance:none; border:0; background:var(--c-tint,var(--raised)); border-radius:10px; padding:6px 22px 6px 8px; font-size:12px; width:auto; color:var(--ink);
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238A91A5' stroke-width='1.5'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 8px center}
   .tx.dup{opacity:.45}
   .tx.dup .n:after{content:" · schon da"; color:var(--ink-faint); font-weight:400}
+  .archrow{opacity:.85}
 
   /* ---------- Budget ---------- */
   .budrow{display:flex; align-items:center; gap:11px; padding:9px 0; border-bottom:1px solid var(--line)}
@@ -284,15 +290,16 @@
       </div>
       <div class="row small faint" style="padding:0 4px"><span id="txCount"></span><span id="txRetention"></span></div>
       <div class="card" id="txList"></div>
+      <div class="card" id="archCard"></div>
     </div>
   </section>
 
   <!-- ===== Import ===== -->
   <section class="view" id="view-import">
     <div class="drop" id="drop">
-      <input type="file" id="fileIn" accept="application/pdf,.pdf" multiple>
+      <input type="file" id="fileIn" accept="application/pdf,.pdf,text/csv,.csv" multiple>
       <b>Kontoauszug hierher ziehen</b>
-      ING-PDF, auch mehrere auf einmal. Die Datei wird nur ausgelesen und danach verworfen.
+      ING-Auszug als PDF oder die CSV aus der Umsatzanzeige für den laufenden Monat. Die Datei wird nur ausgelesen und danach verworfen.
     </div>
     <div class="card" id="impInfo" style="display:none"></div>
     <div class="card" id="impBox" style="display:none">
@@ -305,7 +312,7 @@
       </div>
     </div>
     <div class="card flat">
-      <div class="hint" style="margin-top:0">Riznica merkt sich zu jeder Buchung einen Fingerabdruck, daher kann derselbe Auszug beliebig oft eingelesen werden, ohne Doppelungen. Der Import braucht das Passwort, weil die Buchungen sofort verschlüsselt abgelegt werden.</div>
+      <div class="hint" style="margin-top:0"><b>Laufender Monat:</b> Im ING-Banking unter Umsätze den Zeitraum wählen und als CSV exportieren, hier reinziehen. Kommt später der Monatsauszug als PDF, erkennt Riznica die Überschneidung und legt nichts doppelt an. Der Import braucht das Passwort, weil die Buchungen sofort verschlüsselt abgelegt werden.</div>
     </div>
   </section>
 
@@ -329,10 +336,11 @@
       <h2>Schutz</h2>
       <div class="list">
         <div class="item link" id="pwItem"><span>Passwort</span><span class="r" id="pwState"></span></div>
-        <div class="item"><span>Buchungen aufbewahren</span><span class="r"><select id="retSel" style="width:120px"><option value="30">30 Tage</option><option value="60">60 Tage</option><option value="100">100 Tage</option><option value="180">180 Tage</option><option value="365">1 Jahr</option></select></span></div>
+        <div class="item"><span>Buchungen sichtbar</span><span class="r"><select id="retSel" style="width:120px"><option value="30">30 Tage</option><option value="100">100 Tage</option><option value="180">180 Tage</option><option value="365">1 Jahr</option><option value="730">2 Jahre</option></select></span></div>
+        <div class="item link" id="archItem"><span>Archiv-Passwort</span><span class="r" id="archState"></span></div>
         <div class="item"><span>Automatisch sperren</span><span class="r"><select id="autoLock" style="width:120px"><option value="0">nie</option><option value="5">5 Min</option><option value="15">15 Min</option><option value="60">1 Std</option></select></span></div>
       </div>
-      <div class="hint">Nach Ablauf werden Einzelbuchungen unwiderruflich gelöscht. Die Monatssummen je Kategorie bleiben dauerhaft erhalten und tragen die Übersicht.</div>
+      <div class="hint" id="retHint"></div>
     </div>
     <div class="card">
       <h2>Abgleich<span class="sub" id="syncLabel"></span></h2>
@@ -568,13 +576,46 @@ function parseING(pages){
   return res;
   function amt(s){ return Number(s.replace(/\./g,"").replace(",",".")); }
 }
+
+/* ---------- ING-Umsatzanzeige als CSV (laufender Monat) ---------- */
+function parseINGCsv(text){
+  const res={bank:"ing", period:null, iban:null, neuerSaldo:null, alterSaldo:null, tx:[], warn:[], src:"csv"};
+  const lines=text.replace(/\r/g,"").split("\n");
+  let head=null, cols={};
+  const amt=s=>{ s=String(s||"").trim().replace(/\s|€|EUR/g,""); if(!s) return NaN; if(/,\d{1,2}$/.test(s)) s=s.replace(/\./g,"").replace(",","."); return Number(s); };
+  for(const line of lines){
+    if(!line.trim()) continue;
+    const f=line.split(";").map(x=>x.replace(/^"|"$/g,"").trim());
+    if(!head){
+      if(/^IBAN$/i.test(f[0])&&f[1]) res.iban=f[1].replace(/\s/g,"");
+      if(/^Zeitraum$/i.test(f[0])&&f[1]) res.period=f[1];
+      if(/^Saldo$/i.test(f[0])&&f[1]) res.neuerSaldo=amt(f[1]);
+      if(/^Buchung$/i.test(f[0])&&f.some(x=>/^Betrag$/i.test(x))){ head=f; f.forEach((h,i)=>{ cols[h.toLowerCase()]=i; }); }
+      continue;
+    }
+    if(f.length<head.length-1) continue;
+    const date=f[cols["buchung"]], m=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(date||""); if(!m) continue;
+    const val=f[cols["valuta"]], mv=/^(\d{2})\.(\d{2})\.(\d{4})$/.exec(val||"");
+    const iBetrag=cols["betrag"]; const amount=amt(f[iBetrag]); if(!isFinite(amount)) continue;
+    const name=f[cols["auftraggeber/empfänger"]]||f[cols["auftraggeber/empfaenger"]]||"";
+    const type=f[cols["buchungstext"]]||"Buchung";
+    let purpose=f[cols["verwendungszweck"]]||"";
+    const ref=(purpose.match(/(?:Mandat|Referenz|Mandatsref\.?|Kundenreferenz)[^A-Za-z]*[:\s]*\S+/gi)||[]).join(" ");
+    purpose=purpose.replace(/(?:Mandat|Referenz|Mandatsref\.?|Kundenreferenz)[^A-Za-z]*[:\s]*\S+/gi,"").replace(/\s+/g," ").trim();
+    res.tx.push({date:m[3]+"-"+m[2]+"-"+m[1], valuta:mv?mv[3]+"-"+mv[2]+"-"+mv[1]:null, type:type, name:name||purpose.split(" ").slice(0,4).join(" ")||type, amount:amount, purpose:purpose, ref:ref});
+  }
+  if(!head) res.warn.push("Keine Umsatztabelle gefunden. Ist es der CSV-Export der ING-Umsatzanzeige?");
+  else if(!res.tx.length) res.warn.push("Die CSV enthält keine Umsätze.");
+  res.tx.reverse();
+  return res;
+}
 </script>
 <script>
 (function(){
 "use strict";
-const APP_VERSION="2026-09-24-1";
+const APP_VERSION="2026-09-24-2";
 /* ---------- Ablage ---------- */
-const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1";
+const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1", ARCH="rz_archive_v1", ARCHK="rz_archive_key_v1";
 const LOCAL_ONLY=[SYNC, UI];                    // bleibt strikt auf dem Gerät
 function read(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
 function write(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ toast("Speicher voll"); } scheduleSync(k); }
@@ -639,10 +680,10 @@ const BUILTIN_RULES=[
 
 /* ---------- Konfiguration ---------- */
 let cfg=read(CFG,null);
-if(!cfg){ cfg={v:1, accounts:[], categories:DEFAULT_CATS.map(c=>Object.assign({},c)), rules:[], budgets:{}, retention:100, autoLock:15, theme:"auto", primary:null}; }
+if(!cfg){ cfg={v:1, accounts:[], categories:DEFAULT_CATS.map(c=>Object.assign({},c)), rules:[], budgets:{}, retention:365, autoLock:15, theme:"auto", primary:null}; }
 if(!cfg.categories||!cfg.categories.length) cfg.categories=DEFAULT_CATS.map(c=>Object.assign({},c));
 cfg.rules=cfg.rules||[]; cfg.budgets=cfg.budgets||{}; cfg.accounts=cfg.accounts||[];
-if(!cfg.retention) cfg.retention=100; if(cfg.autoLock==null) cfg.autoLock=15;
+if(!cfg.retention) cfg.retention=365; if(cfg.autoLock==null) cfg.autoLock=15;
 function saveCfg(){ write(CFG,cfg); }
 function cat(id){ return cfg.categories.find(c=>c.id===id)||cfg.categories.find(c=>c.id==="sonstiges")||cfg.categories[cfg.categories.length-1]; }
 function acc(id){ return cfg.accounts.find(a=>a.id===id); }
@@ -674,7 +715,7 @@ async function sha(s){ const h=await subtle().digest("SHA-256",new TextEncoder()
 let sessKey=null, sessPw=null, lockTimer=null, cryptoCfg=read(CRYPTO,null);
 function locked(){ return !sessKey; }
 function touchLock(){ clearTimeout(lockTimer); if(!locked() && cfg.autoLock>0) lockTimer=setTimeout(lock, cfg.autoLock*60000); }
-function lock(){ sessKey=null; sessPw=null; rawCache=null; clearTimeout(lockTimer); renderLock(); renderAll(); }
+function lock(){ sessKey=null; sessPw=null; rawCache=null; archCache=null; archKey=null; clearTimeout(lockTimer); renderLock(); renderAll(); }
 async function unlockWith(pw){
   if(!cryptoCfg){ // erstes Passwort
     const salt=window.crypto.getRandomValues(new Uint8Array(16));
@@ -733,15 +774,49 @@ async function saveDays(days){
   write(TX,store);
 }
 function allRaw(){ const out=[]; if(!rawCache) return out; Object.keys(rawCache).sort().forEach(d=>rawCache[d].forEach(t=>out.push(t))); return out; }
-function pruneOld(){
+/* Fingerabdrücke: id -> {d:Datum, s:Quelle}. Dazu ein loser Schlüssel Konto|Datum|Betrag,
+   damit dieselbe Buchung aus CSV und PDF nicht doppelt landet, obwohl die Texte abweichen. */
+function idEntry(v){ return typeof v==="string"?{d:v,s:"pdf"}:(v||null); }
+function looseKey(t){ return "L:"+t.acc+"|"+t.date+"|"+Number(t.amount).toFixed(2); }
+function registerId(ids,t,src){ ids[t.id]={d:t.date,s:src}; const lk=looseKey(t); const cur=ids[lk]; if(!cur||typeof cur==="string") ids[lk]={d:t.date,s:src,n:1}; else { cur.n=(cur.n||1)+1; if(cur.s!==src) cur.s="mix"; } }
+function isDup(ids,t,src){ if(ids[t.id]) return true; const cur=idEntry(ids[looseKey(t)]); return !!(cur && cur.s!==src); }
+
+/* ---------- Archiv: älter als die Sichtfrist, zweites Passwort ---------- */
+let archKey=null, archCache=null;
+function archiveConfigured(){ return !!read(ARCHK,null); }
+async function archiveKeyViaMain(){ const k=read(ARCHK,null); if(!k||!sessKey) return null; try{ const raw=unb64(await decKey(sessKey,k.byMain)); return subtle().importKey("raw",raw,{name:"AES-GCM"},false,["encrypt","decrypt"]); }catch(e){ return null; } }
+async function setupArchive(pw){
+  if(locked()) return false;
+  let raw; const old=read(ARCHK,null);
+  if(old){ try{ raw=unb64(await decKey(sessKey,old.byMain)); }catch(e){ return false; } } else raw=window.crypto.getRandomValues(new Uint8Array(32));
+  const salt=window.crypto.getRandomValues(new Uint8Array(16)); const pk=await deriveKey(pw,salt,KDF_IT);
+  const byPw=await encKey(pk,b64(raw)); const byMain=await encKey(sessKey,b64(raw));
+  write(ARCHK,{salt:b64(salt),byPw:byPw,byMain:byMain,it:KDF_IT}); return true;
+}
+async function rewrapArchiveForMain(oldKey,newKey){ const k=read(ARCHK,null); if(!k) return; try{ const raw=await decKey(oldKey,k.byMain); k.byMain=await encKey(newKey,raw); write(ARCHK,k); }catch(e){} }
+async function openArchive(pw){
+  const k=read(ARCHK,null); if(!k) return false;
+  try{ const pk=await deriveKey(pw,unb64(k.salt),k.it||KDF_IT); const raw=unb64(await decKey(pk,k.byPw)); archKey=await subtle().importKey("raw",raw,{name:"AES-GCM"},false,["encrypt","decrypt"]); }catch(e){ return false; }
+  const store=read(ARCH,{}); archCache={}; for(const d of Object.keys(store)){ try{ archCache[d]=JSON.parse(await decKey(archKey,store[d])); }catch(e){ archCache[d]=[]; } }
+  return true;
+}
+async function pruneOld(){
   const cut=new Date(); cut.setDate(cut.getDate()-cfg.retention); const c=ymd(cut);
-  const store=read(TX,{}); let n=0; const sums=read(SUMS,{}); const fro=sums._frozen=sums._frozen||[];
-  Object.keys(store).forEach(d=>{ if(d<c){ delete store[d]; n++; if(rawCache) delete rawCache[d]; const m=ym(d); if(fro.indexOf(m)<0) fro.push(m); } });
-  if(n){ write(TX,store); write(SUMS,sums); }
+  const store=read(TX,{}); const old=Object.keys(store).filter(d=>d<c); if(!old.length) return 0;
+  const sums=read(SUMS,{}); const fro=sums._frozen=sums._frozen||[];
+  let ak=null;
+  if(archiveConfigured()){ if(locked()) return 0; ak=await archiveKeyViaMain(); if(!ak) return 0; }   // Archiv braucht die offene Sitzung
+  const arch=read(ARCH,{}); let n=0;
+  for(const d of old){
+    if(ak){ let arr=rawCache&&rawCache[d]; if(!arr){ try{ arr=JSON.parse(await decKey(sessKey,store[d])); }catch(e){ arr=null; } } if(!arr) continue; arch[d]=await encKey(ak,JSON.stringify(arr)); if(archCache) archCache[d]=arr; }
+    delete store[d]; n++; if(rawCache) delete rawCache[d]; const m=ym(d); if(fro.indexOf(m)<0) fro.push(m);
+  }
+  if(n){ write(TX,store); write(SUMS,sums); if(ak) write(ARCH,arch); }
   const ids=read(IDS,{}); const cut2=new Date(); cut2.setFullYear(cut2.getFullYear()-3); const c2=ymd(cut2); let m=0;
-  Object.keys(ids).forEach(k=>{ if(ids[k]<c2){ delete ids[k]; m++; } }); if(m) write(IDS,ids);
+  Object.keys(ids).forEach(k=>{ const e=idEntry(ids[k]); if(e&&e.d<c2){ delete ids[k]; m++; } }); if(m) write(IDS,ids);
   return n;
 }
+function allArch(){ const out=[]; if(!archCache) return out; Object.keys(archCache).sort().forEach(d=>archCache[d].forEach(t=>out.push(t))); return out; }
 
 /* ---------- Summen und Kontostände: das, was bleibt ---------- */
 function isFrozen(m){ const s=read(SUMS,{}); return (s._frozen||[]).indexOf(m)>=0; }
@@ -751,13 +826,13 @@ function applyDelta(t,sign){
   const a=sums[m]=sums[m]||{}; const s=a[t.acc]=a[t.acc]||{}; const c=s[t.cat]=s[t.cat]||{out:0,in:0,n:0};
   if(t.amount<0) c.out=Math.round((c.out-sign*t.amount)*100)/100; else c.in=Math.round((c.in+sign*t.amount)*100)/100; c.n+=sign; if(c.n<=0&&!c.out&&!c.in) delete s[t.cat];
   const b=bal[t.acc]=bal[t.acc]||{}; Object.keys(b).forEach(k=>{ if(k>=m) b[k]=Math.round((b[k]+sign*t.amount)*100)/100; });
-  const ids=read(IDS,{}); if(sign>0) ids[t.id]=t.date; write(IDS,ids);
+  const ids=read(IDS,{}); if(sign>0&&!ids[t.id]) registerId(ids,t,t.src||"pdf"); write(IDS,ids);
   write(SUMS,sums); write(BAL,bal);
 }
 function recomputeSums(){
   if(!rawCache) return;
   const sums=read(SUMS,{}), bal=read(BAL,{}), ids=read(IDS,{}); const fro=sums._frozen||[];
-  const months={}; allRaw().forEach(t=>{ const m=ym(t.date); ids[t.id]=t.date; if(fro.indexOf(m)>=0) return; (months[m]=months[m]||[]).push(t); });
+  const months={}; allRaw().forEach(t=>{ const m=ym(t.date); if(!ids[t.id]) registerId(ids,t,t.src||"pdf"); if(fro.indexOf(m)>=0) return; (months[m]=months[m]||[]).push(t); });
   Object.keys(months).forEach(m=>{
     const s={}; months[m].forEach(t=>{ const a=s[t.acc]=s[t.acc]||{}; const c=a[t.cat]=a[t.cat]||{out:0,in:0,n:0}; if(t.amount<0) c.out+=-t.amount; else c.in+=t.amount; c.n++; });
     Object.keys(s).forEach(a=>Object.keys(s[a]).forEach(c=>{ s[a][c].out=Math.round(s[a][c].out*100)/100; s[a][c].in=Math.round(s[a][c].in*100)/100; }));
@@ -795,43 +870,53 @@ async function pdfToPages(buf){
 async function txId(t){ return sha([t.acc,t.date,t.amount.toFixed(2),(t.name||"").toLowerCase(),(t.purpose||"").toLowerCase().slice(0,60)].join("|")); }
 
 /* ---------- Import ---------- */
-let pending=null;   // {tx:[...], info}
+let pending=null;   // {tx:[...], infos, acc}
+function decodeCsv(buf){ const u=new Uint8Array(buf); const utf=new TextDecoder("utf-8",{fatal:false}).decode(u); if(u[0]===0xEF&&u[1]===0xBB) return utf; if(/\uFFFD/.test(utf)) { try{ return new TextDecoder("windows-1252").decode(u); }catch(e){ return utf; } } return utf; }
 async function handleFiles(files){
   if(!files||!files.length) return;
   const a=importAccount(); if(!a){ toast("Erst ein Konto mit Bank ING anlegen"); showTab("mehr"); return; }
   if(!(await ensureUnlocked("Zum Einlesen wird das Passwort gebraucht: die Buchungen werden sofort verschlüsselt abgelegt."))) return;
-  $("impInfo").style.display=""; $("impInfo").innerHTML='<span class="muted">liest …</span>';
-  const all=[], infos=[], warns=[];
-  for(const f of files){
-    try{ const pages=await pdfToPages(await f.arrayBuffer()); const r=parseING(pages); r.tx.forEach(t=>{ t.acc=a.id; all.push(t); }); infos.push(r); warns.push(...r.warn.map(w=>f.name+": "+w)); }
-    catch(e){ warns.push(f.name+": konnte nicht gelesen werden ("+(e&&e.message||"?")+")"); }
-  }
-  const ids=read(IDS,{});
-  for(const t of all){ t.id=await txId(t); t.cat=classify(t.name,t.purpose,t.type,t.amount); t.dup=!!ids[t.id]; }
-  all.sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:0);
-  pending={tx:all, infos:infos, acc:a.id};
-  const fresh=all.filter(t=>!t.dup).length, dups=all.length-fresh;
-  const per=infos.map(i=>i.period).filter(Boolean).join(", ");
-  let html='<div class="row"><b>'+all.length+' Buchung'+(all.length===1?'':'en')+'</b><span class="muted small">'+esc(per)+'</span></div>';
-  if(dups) html+='<div class="small faint" style="margin-top:4px">'+dups+' davon schon vorhanden, werden übersprungen.</div>';
-  const ns=infos.map(i=>i.neuerSaldo).filter(v=>v!=null); if(ns.length) html+='<div class="small faint" style="margin-top:4px">Neuer Saldo laut Auszug: '+esc(eur(ns[ns.length-1]))+'</div>';
-  warns.forEach(w=>html+='<div class="err">'+esc(w)+'</div>');
-  $("impInfo").innerHTML=html;
-  if(!all.length){ $("impBox").style.display="none"; return; }
-  $("impSub").textContent=fresh+" neu";
-  renderPreview();
-  $("impBox").style.display="";
-  $("impOk").disabled=!fresh;
+  showTab("import");
+  $("impInfo").style.display=""; $("impInfo").innerHTML='<span class="muted">liest …</span>'; $("impBox").style.display="none";
+  try{
+    const all=[], infos=[], warns=[];
+    for(const f of files){
+      const isCsv=/\.csv$/i.test(f.name)||/csv|text\/plain/.test(f.type||"");
+      try{
+        let r; if(isCsv){ r=parseINGCsv(decodeCsv(await f.arrayBuffer())); } else { r=parseING(await pdfToPages(await f.arrayBuffer())); r.src="pdf"; }
+        r.tx.forEach(t=>{ t.acc=a.id; t.src=r.src||"pdf"; all.push(t); }); infos.push(r); warns.push(...r.warn.map(w=>f.name+": "+w));
+      }catch(e){ warns.push(f.name+": konnte nicht gelesen werden ("+(e&&e.message||"?")+")"); }
+    }
+    const ids=read(IDS,{});
+    for(const t of all){ t.id=await txId(t); t.dup=isDup(ids,t,t.src); t.cat=t.dup&&rawCache?((allRaw().find(x=>x.id===t.id)||{}).cat||classify(t.name,t.purpose,t.type,t.amount)):classify(t.name,t.purpose,t.type,t.amount); }
+    all.sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:0);
+    pending={tx:all, infos:infos, acc:a.id};
+    const fresh=all.filter(t=>!t.dup).length, dups=all.length-fresh;
+    const per=infos.map(i=>i.period).filter(Boolean).join(", ");
+    let html='<div class="row"><b>'+all.length+' Buchung'+(all.length===1?'':'en')+(infos.some(i=>i.src==="csv")?' aus der Umsatzanzeige':'')+'</b><span class="muted small">'+esc(per)+'</span></div>';
+    if(dups) html+='<div class="small faint" style="margin-top:4px">'+dups+' davon schon vorhanden. Sie werden nicht doppelt angelegt, die Kategorie kannst du trotzdem anpassen.</div>';
+    const ns=infos.map(i=>i.neuerSaldo).filter(v=>v!=null); if(ns.length) html+='<div class="small faint" style="margin-top:4px">Saldo laut Datei: '+esc(eur(ns[ns.length-1]))+'</div>';
+    warns.forEach(w=>html+='<div class="err">'+esc(w)+'</div>');
+    $("impInfo").innerHTML=html;
+    if(!all.length){ pending=null; return; }
+    $("impSub").textContent=fresh?fresh+" neu":"nichts Neues";
+    renderPreview();
+    $("impBox").style.display="";
+    $("impOk").disabled=!fresh; $("impOk").textContent=fresh?"Übernehmen":"Fertig";
+  }catch(e){ $("impInfo").innerHTML='<div class="err">Beim Einlesen ist etwas schiefgegangen: '+esc(e&&e.message||e)+'</div>'; pending=null; }
 }
 function importAccount(){ const a=cfg.accounts.filter(x=>x.bank==="ing"); if(!a.length) return null; return a.find(x=>x.id===cfg.primary)||a[0]; }
 function catSelect(cur,cls){ const c=cat(cur); return '<select class="'+(cls||"cpick")+'" style="--c-tint:'+tint(c.color)+'">'+cfg.categories.map(k=>'<option value="'+k.id+'"'+(k.id===cur?' selected':'')+'>'+esc(k.icon+" "+k.name)+'</option>').join("")+'</select>'; }
 function renderPreview(){
   const el=$("impList");
-  el.innerHTML=pending.tx.map((t,i)=>'<div class="tx'+(t.dup?' dup':'')+'" data-i="'+i+'">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+'</div><div class="p">'+esc(t.date.split("-").reverse().join(".")+(t.purpose?" · "+t.purpose:""))+'</div></div>'+(t.dup?'':catSelect(t.cat))+'<div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>').join("");
-  el.querySelectorAll("select").forEach(s=>s.addEventListener("change",e=>{
+  el.innerHTML=pending.tx.map((t,i)=>{ const d=t.date.split("-").reverse().join("."); const meta=[d, t.type, t.valuta&&t.valuta!==t.date?"Valuta "+t.valuta.split("-").reverse().join("."):null].filter(Boolean).join(" · ");
+    return '<div class="tx'+(t.dup?' dup':'')+'" data-i="'+i+'">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+'</div>'+(t.purpose?'<div class="p">'+esc(t.purpose)+'</div>':'')+'<div class="meta">'+esc(meta)+'</div></div>'+catSelect(t.cat)+'<div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>'; }).join("");
+  el.querySelectorAll("select").forEach(s=>s.addEventListener("change",async e=>{
     const i=Number(e.target.closest(".tx").dataset.i); const t=pending.tx[i]; t.cat=e.target.value; t.userCat=true;
     // Gleiche Bezeichnung im selben Import mitziehen und als Regel merken
     const key=(t.name||"").toLowerCase().slice(0,24); if(key.length>=3){ addRule(t.name.slice(0,40),t.cat); pending.tx.forEach(o=>{ if(!o.userCat && (o.name||"").toLowerCase().slice(0,24)===key) o.cat=t.cat; }); }
+    // Schon vorhandene Buchungen direkt umbuchen
+    if(!locked()){ const days=new Set(); pending.tx.forEach(o=>{ if(!o.dup) return; const r=allRaw().find(x=>x.id===o.id); if(r&&r.cat!==o.cat){ if(isFrozen(ym(r.date))){ applyDelta(r,-1); r.cat=o.cat; applyDelta(r,1); } else r.cat=o.cat; days.add(r.date); } }); if(days.size){ await saveDays([...days]); recomputeSums(); } }
     renderPreview();
   }));
 }
@@ -842,8 +927,10 @@ async function commitImport(){
   // Anfangsstand aus dem Auszug ableiten, falls noch keiner gesetzt ist
   if(a && a.start==null){ const ns=pending.infos.map(i=>i.neuerSaldo).filter(v=>v!=null); if(ns.length){ const sum=pending.tx.reduce((s,t)=>s+t.amount,0); const before=ns[ns.length-1]-sum; const firstM=ym(fresh[0].date); const bal=read(BAL,{}); bal[a.id]=bal[a.id]||{}; if(!Object.keys(bal[a.id]).length){ a.start=Math.round(before*100)/100; saveCfg(); } } }
   const days=new Set();
-  fresh.forEach(t=>{ const o={id:t.id,acc:t.acc,date:t.date,valuta:t.valuta,type:t.type,name:t.name,purpose:t.purpose,amount:t.amount,cat:t.cat}; (rawCache[t.date]=rawCache[t.date]||[]).push(o); days.add(t.date); if(isFrozen(ym(t.date))) applyDelta(o,1); });
-  await saveDays([...days]); recomputeSums(); pruneOld();
+  const ids=read(IDS,{});
+  fresh.forEach(t=>{ const o={id:t.id,acc:t.acc,date:t.date,valuta:t.valuta,type:t.type,name:t.name,purpose:t.purpose,amount:t.amount,cat:t.cat,src:t.src}; (rawCache[t.date]=rawCache[t.date]||[]).push(o); days.add(t.date); registerId(ids,o,t.src||"pdf"); if(isFrozen(ym(t.date))) applyDelta(o,1); });
+  write(IDS,ids);
+  await saveDays([...days]); recomputeSums(); await pruneOld();
   toast(fresh.length+" Buchungen übernommen");
   pending=null; $("impBox").style.display="none"; $("impInfo").style.display="none"; $("fileIn").value="";
   viewMonth=ym(fresh[fresh.length-1].date); showTab("uebersicht"); renderAll();
@@ -869,7 +956,7 @@ async function saveTx(){
   if(!(await ensureUnlocked())) return;
   const days=new Set();
   if(editTx.id){ const old=allRaw().find(t=>t.id===editTx.id); if(old){ rawCache[old.date]=rawCache[old.date].filter(t=>t.id!==editTx.id); days.add(old.date); if(isFrozen(ym(old.date))) applyDelta(old,-1); } }
-  const t={id:editTx.id||("m"+uid()),acc:$("txAcc").value,date:date,valuta:date,type:editTx.type||"Manuell",name:name,purpose:$("txPurpose").value.trim(),amount:Math.round(amount*100)/100,cat:editTx.cat,manual:editTx.manual||!!editTx.manual};
+  const t={id:editTx.id||("m"+uid()),acc:$("txAcc").value,date:date,valuta:date,type:editTx.type||"Manuell",name:name,purpose:$("txPurpose").value.trim(),amount:Math.round(amount*100)/100,cat:editTx.cat,manual:editTx.manual||!!editTx.manual,src:editTx.src||"man"};
   if(!editTx.id) t.id=await txId(t);
   (rawCache[date]=rawCache[date]||[]).push(t); days.add(date); if(isFrozen(ym(date))) applyDelta(t,1);
   if($("txRule").classList.contains("on")) addRule(name.slice(0,40),t.cat);
@@ -979,12 +1066,27 @@ function renderTx(){
   $("txCount").innerHTML=(txFilterCat?'<span class="chip on" id="txChip">'+esc(cat(txFilterCat).icon+" "+cat(txFilterCat).name)+' · '+esc(monthLabel(viewMonth))+' ×</span>':list.length+" Buchungen");
   const cut=new Date(); cut.setDate(cut.getDate()-cfg.retention); $("txRetention").textContent="ab "+cut.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
   if($("txChip")) $("txChip").addEventListener("click",()=>{ txFilterCat=null; renderTx(); });
+  renderArchive(q);
   if(!list.length){ $("txList").innerHTML='<div class="empty">'+(q||txFilterCat?'Nichts gefunden.':'Noch keine Buchungen. Der Import füllt diese Liste.')+'</div>'; return; }
   let html="", lastD=null, dsum=0, buf=[];
   const flush=()=>{ if(!buf.length) return; const d=new Date(lastD+"T12:00:00"); html+='<div class="daygroup"><div class="day"><span>'+DAYS[d.getDay()]+', '+d.toLocaleDateString("de-DE",{day:"numeric",month:"long"})+'</span><span>'+esc(eur(dsum,{plus:true}))+'</span></div>'+buf.join("")+'</div>'; buf=[]; dsum=0; };
   list.forEach(t=>{ if(t.date!==lastD){ flush(); lastD=t.date; } dsum+=t.amount; buf.push('<div class="tx" data-id="'+esc(t.id)+'">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+'</div><div class="p">'+esc((t.purpose||t.type||"")+(cfg.accounts.length>1&&acc(t.acc)?" · "+acc(t.acc).name:""))+'</div></div><div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>'); });
   flush(); $("txList").innerHTML=html;
   $("txList").querySelectorAll(".tx").forEach(el=>el.addEventListener("click",()=>{ const t=allRaw().find(x=>x.id===el.dataset.id); if(t) openTx(t); }));
+}
+function renderArchive(q){
+  const el=$("archCard"); const n=Object.keys(read(ARCH,{})).length;
+  if(!archiveConfigured()){ el.innerHTML='<h2>Archiv</h2><div class="empty">Buchungen, die älter als '+cfg.retention+' Tage sind, werden gelöscht. Mit einem Archiv-Passwort (Mehr → Schutz) wandern sie stattdessen verschlüsselt ins Archiv.</div>'; return; }
+  if(!archCache){ el.innerHTML='<h2>Archiv<span class="sub">'+n+' Tage</span></h2><div class="locked" style="padding:14px"><div class="glyph">🗝️</div><p>Älter als '+cfg.retention+' Tage, mit dem Archiv-Passwort verschlüsselt.</p><button class="btn" type="button" id="archOpen"'+(n?'':' disabled')+'>Archiv öffnen</button></div>';
+    if($("archOpen")) $("archOpen").addEventListener("click",async()=>{ const pw=await askArchivePw("Archiv öffnen"); if(!pw) return; if(!(await openArchive(pw))){ toast("Archiv-Passwort stimmt nicht"); return; } renderTx(); }); return; }
+  let list=allArch().filter(t=>!viewAcc||t.acc===viewAcc); if(q) list=list.filter(t=>((t.name||"")+" "+(t.purpose||"")+" "+cat(t.cat).name).toLowerCase().indexOf(q)>=0);
+  list.sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  let html='<div class="row"><h2 style="margin:0">Archiv<span class="sub">'+list.length+' Buchungen</span></h2><button class="btn ghost" type="button" id="archClose">Schließen</button></div>';
+  if(!list.length) html+='<div class="empty">Nichts im Archiv'+(q?' gefunden':'')+'.</div>';
+  let lastM=null; list.slice(0,400).forEach(t=>{ const m=ym(t.date); if(m!==lastM){ html+='<div class="day" style="font-size:12.5px; color:var(--ink-faint); padding:10px 4px 4px">'+esc(monthLabel(m))+'</div>'; lastM=m; }
+    html+='<div class="tx archrow" style="cursor:default">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+'</div><div class="p">'+esc(t.date.split("-").reverse().join(".")+(t.purpose?" · "+t.purpose:""))+'</div></div><div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>'; });
+  if(list.length>400) html+='<div class="empty">Nur die ersten 400 Treffer, bitte Suche eingrenzen.</div>';
+  el.innerHTML=html; $("archClose").addEventListener("click",()=>{ archCache=null; archKey=null; renderTx(); });
 }
 
 /* ---------- Budget ---------- */
@@ -1006,11 +1108,13 @@ function renderMore(){
   $("accList").querySelectorAll(".acc").forEach(el=>el.addEventListener("click",()=>openAcc(acc(el.dataset.id))));
   $("pwState").textContent=cryptoCfg?"gesetzt":"noch nicht gesetzt";
   $("retSel").value=String(cfg.retention); $("autoLock").value=String(cfg.autoLock);
+  const ac=archiveConfigured(); $("archState").textContent=ac?"gesetzt":"nicht gesetzt";
+  $("retHint").textContent=ac?"Einzelbuchungen bleiben "+cfg.retention+" Tage mit deinem Passwort sichtbar. Ältere wandern verschlüsselt ins Archiv, das nur das Archiv-Passwort öffnet. Monatssummen bleiben immer.":"Einzelbuchungen bleiben "+cfg.retention+" Tage, danach werden sie gelöscht. Mit einem Archiv-Passwort werden sie stattdessen verschlüsselt archiviert. Monatssummen bleiben immer.";
   $("catsCount").textContent=cfg.categories.length; $("rulesCount").textContent=cfg.rules.length+" eigene";
   $("syncState").textContent=syncCfg&&syncCfg.token?"verbunden":"aus";
   document.querySelectorAll("#themeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.t===(cfg.theme||"auto")));
-  const store=read(TX,{}); const n=Object.keys(store).length;
-  $("verInfo").textContent="Riznica "+APP_VERSION+" · "+n+" Tage mit Buchungen verschlüsselt · "+Object.keys(read(SUMS,{})).filter(k=>k!=="_frozen").length+" Monate mit Summen";
+  const store=read(TX,{}); const n=Object.keys(store).length; const na=Object.keys(read(ARCH,{})).length;
+  $("verInfo").textContent="Riznica "+APP_VERSION+" · "+n+" Tage mit Buchungen verschlüsselt"+(na?" · "+na+" Tage im Archiv":"")+" · "+Object.keys(read(SUMS,{})).filter(k=>k!=="_frozen").length+" Monate mit Summen";
 }
 let editAcc=null;
 function openAcc(a){
@@ -1095,7 +1199,7 @@ async function syncPull(){
     // Neu laden: andere Konfiguration, evtl. anderes Salz. Das Passwort ist dasselbe.
     cfg=read(CFG,cfg); cryptoCfg=read(CRYPTO,null); const pw=sessPw; sessKey=null; const ok=await unlockWith(pw);
     if(!ok){ setSyncStatus("Passwort weicht ab"); syncBusy=false; renderLock(); renderAll(); return "badpw"; }
-    recomputeSums(); pruneOld(); setSyncStatus("aktualisiert"); syncBusy=false; renderAll(); return "applied";
+    recomputeSums(); await pruneOld(); setSyncStatus("aktualisiert"); syncBusy=false; renderAll(); return "applied";
   }catch(e){ const bad=e&&(e.name==="OperationError"||e.name==="InvalidAccessError"); setSyncStatus(bad?"Passwort weicht ab":"offline"); syncBusy=false; return bad?"badpw":"offline"; }
 }
 async function syncNow(){ if(!syncCfg||!syncCfg.token){ toast("Erst Abgleich einrichten"); return; } if(!(await ensureUnlocked("Der Abgleich verschlüsselt mit deinem Passwort."))) return; const r=await syncPull(); if(r==="empty"||r==="uptodate") await syncPush(r==="empty"); renderMore(); }
@@ -1124,10 +1228,24 @@ async function changePassword(){
   if(!np) return;
   const salt=window.crypto.getRandomValues(new Uint8Array(16)); const key=await deriveKey(np,salt,KDF_IT);
   cryptoCfg={salt:b64(salt),check:await encKey(key,"riznica"),it:KDF_IT}; write(CRYPTO,cryptoCfg);
+  await rewrapArchiveForMain(oldKey,key);
   sessKey=key; sessPw=np; await saveDays(Object.keys(rawCache)); if(syncCfg) { delete syncCfg.salt; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); }
   toast("Passwort geändert"); renderMore(); syncPush(true);
 }
 
+/* ---------- Archiv-Passwort abfragen (eigener Dialog über das Passwort-Fenster) ---------- */
+function askArchivePw(title,create){
+  return new Promise(res=>{ pwResolve=null; $("pwTitle").textContent=title; $("pwText").textContent=create?"Ein zweites Passwort nur für alte Buchungen. Es ersetzt dein Hauptpasswort nicht.":""; $("pw2Wrap").style.display=create?"":"none"; $("pw1").value=""; $("pw2").value=""; $("pwErr").textContent=""; $("pwOv").classList.add("open");
+    const ok=$("pwOk"), cancel=$("pwCancel"); const h=()=>{ const p1=$("pw1").value,p2=$("pw2").value; if(p1.length<6){ $("pwErr").textContent="Mindestens 6 Zeichen."; return; } if(create&&p1!==p2){ $("pwErr").textContent="Die Passwörter stimmen nicht überein."; return; } done(p1); };
+    const cn=()=>done(null); const done=v=>{ ok.removeEventListener("click",h); cancel.removeEventListener("click",cn); $("pwOv").classList.remove("open"); res(v); };
+    ok.addEventListener("click",h); cancel.addEventListener("click",cn); setTimeout(()=>$("pw1").focus(),80); });
+}
+async function setupArchivePw(){
+  if(!(await ensureUnlocked("Zuerst dein Hauptpasswort, dann das Archiv-Passwort."))) return;
+  const pw=await askArchivePw(archiveConfigured()?"Archiv-Passwort ändern":"Archiv-Passwort festlegen",true); if(!pw) return;
+  if(await setupArchive(pw)){ toast("Archiv-Passwort gesetzt"); const n=await pruneOld(); if(n) toast(n+" Tage ins Archiv verschoben"); } else toast("Das hat nicht geklappt");
+  renderMore();
+}
 /* ---------- Ansicht, Tabs, Ereignisse ---------- */
 function applyTheme(){ const t=cfg.theme||"auto"; document.documentElement.setAttribute("data-theme",t==="auto"?"":t); const sysLight=window.matchMedia("(prefers-color-scheme: light)").matches; document.documentElement.classList.toggle("sys-light",t==="auto"&&sysLight); const dark=t==="dark"||(t==="auto"&&!sysLight); const m=document.querySelector('meta[name="theme-color"]'); if(m) m.content=dark?"#141A28":"#F4F2EC"; }
 window.matchMedia("(prefers-color-scheme: light)").addEventListener("change",applyTheme);
@@ -1141,8 +1259,9 @@ function wire(){
   $("mNext").addEventListener("click",()=>{ viewMonth=addMonths(viewMonth,1); txFilterCat=null; write(UI,{tab:tab,month:viewMonth}); renderAll(); });
   $("mTitle").addEventListener("click",()=>{ if(cfg.accounts.length<2) return; const i=cfg.accounts.findIndex(a=>a.id===viewAcc); viewAcc=i<0?cfg.accounts[0].id:(i+1<cfg.accounts.length?cfg.accounts[i+1].id:null); renderAll(); toast(viewAcc?acc(viewAcc).name:"Alle Konten"); });
   document.querySelectorAll("#chartSeg button").forEach(b=>b.addEventListener("click",()=>{ chartMode=b.dataset.c; document.querySelectorAll("#chartSeg button").forEach(x=>x.classList.toggle("on",x===b)); renderChart(); }));
-  $("lockBtn").addEventListener("click",async()=>{ if(locked()){ if(await ensureUnlocked()){ if(syncCfg&&syncCfg.token) syncPull().then(()=>renderAll()); } } else { lock(); toast("Verschlossen"); } });
-  $("txUnlock").addEventListener("click",async()=>{ if(await ensureUnlocked()){ if(syncCfg&&syncCfg.token) syncPull().then(()=>renderAll()); } });
+  const afterUnlock=async()=>{ if(syncCfg&&syncCfg.token) await syncPull(); const n=await pruneOld(); if(n&&archiveConfigured()) toast(n+" Tage ins Archiv verschoben"); renderAll(); };
+  $("lockBtn").addEventListener("click",async()=>{ if(locked()){ if(await ensureUnlocked()) afterUnlock(); } else { lock(); toast("Verschlossen"); } });
+  $("txUnlock").addEventListener("click",async()=>{ if(await ensureUnlocked()) afterUnlock(); });
   $("pwOk").addEventListener("click",()=>{ if(pwResolve) pwSubmit(); });
   $("pw1").addEventListener("keydown",e=>{ if(e.key==="Enter"){ if($("pw2Wrap").style.display==="none"){ if(pwResolve) pwSubmit(); else $("pwOk").click(); } else $("pw2").focus(); } });
   $("pw2").addEventListener("keydown",e=>{ if(e.key==="Enter") $("pwOk").click(); });
@@ -1151,7 +1270,7 @@ function wire(){
   const drop=$("drop"); drop.addEventListener("click",()=>$("fileIn").click());
   ["dragenter","dragover"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.add("over"); }));
   ["dragleave","drop"].forEach(ev=>drop.addEventListener(ev,e=>{ e.preventDefault(); drop.classList.remove("over"); }));
-  drop.addEventListener("drop",e=>handleFiles([...e.dataTransfer.files].filter(f=>/pdf$/i.test(f.name)||f.type==="application/pdf")));
+  drop.addEventListener("drop",e=>handleFiles([...e.dataTransfer.files].filter(f=>/\.(pdf|csv)$/i.test(f.name)||/pdf|csv/.test(f.type||""))));
   $("fileIn").addEventListener("change",e=>handleFiles([...e.target.files]));
   document.addEventListener("dragover",e=>{ if(tab!=="import"){ e.preventDefault(); } });
   document.addEventListener("drop",e=>{ if(tab!=="import"&&e.dataTransfer&&e.dataTransfer.files.length){ e.preventDefault(); showTab("import"); handleFiles([...e.dataTransfer.files]); } });
@@ -1166,7 +1285,8 @@ function wire(){
   $("accAdd").addEventListener("click",()=>openAcc(null)); $("accSave").addEventListener("click",saveAcc); $("accCancel").addEventListener("click",()=>$("accOv").classList.remove("open")); $("accDel").addEventListener("click",deleteAcc);
   // Schutz
   $("pwItem").addEventListener("click",changePassword);
-  $("retSel").addEventListener("change",()=>{ cfg.retention=Number($("retSel").value); saveCfg(); const n=pruneOld(); if(n) toast(n+" Tage bereinigt"); renderAll(); });
+  $("retSel").addEventListener("change",async()=>{ cfg.retention=Number($("retSel").value); saveCfg(); const n=await pruneOld(); if(n) toast(n+" Tage "+(archiveConfigured()?"archiviert":"gelöscht")); renderAll(); });
+  $("archItem").addEventListener("click",setupArchivePw);
   $("autoLock").addEventListener("change",()=>{ cfg.autoLock=Number($("autoLock").value); saveCfg(); touchLock(); });
   // Sync
   $("syncItem").addEventListener("click",()=>{ $("syncTok").value=(syncCfg&&syncCfg.token)||""; $("syncErr").textContent=""; $("syncOff").style.display=(syncCfg&&syncCfg.token)?"":"none"; $("syncOv").classList.add("open"); });
@@ -1195,7 +1315,7 @@ let hiddenAt=0;
 function setupSW(){ if(!("serviceWorker" in navigator)||location.protocol==="file:") return; try{ navigator.serviceWorker.register("sw.js",{scope:"./"}).then(reg=>{ reg.addEventListener("updatefound",()=>{ const w=reg.installing; if(!w) return; w.addEventListener("statechange",()=>{ if(w.state==="installed"&&navigator.serviceWorker.controller){ w.postMessage({type:"SKIP_WAITING"}); setTimeout(()=>location.reload(),300); } }); }); }).catch(()=>{}); }catch(e){} }
 /* ---------- Start ---------- */
 function init(){
-  applyTheme(); const ui=read(UI,{}); if(ui.month&&/^\d{4}-\d{2}$/.test(ui.month)) viewMonth=ui.month; pruneOld(); wire(); renderLock();
+  applyTheme(); const ui=read(UI,{}); if(ui.month&&/^\d{4}-\d{2}$/.test(ui.month)) viewMonth=ui.month; wire(); renderLock(); pruneOld().then(n=>{ if(n) renderAll(); });
   showTab(ui.tab&&$("view-"+ui.tab)?ui.tab:"uebersicht");
   if(!cfg.accounts.length){ setTimeout(()=>{ showTab("mehr"); openAcc(null); $("accN").value="ING Giro"; },200); }
   setupSW();
