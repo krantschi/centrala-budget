@@ -82,6 +82,7 @@
   select{appearance:none; -webkit-appearance:none; padding-right:30px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238A91A5' stroke-width='1.6'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center}
   @media (prefers-reduced-motion:reduce){ *{animation:none!important; transition:none!important} }
+  @media (hover:none) and (pointer:coarse){ input,select,textarea,.cpick{font-size:16px} }   /* verhindert das Hineinzoomen auf dem iPhone */
 
   /* ---------- Kopf ---------- */
   .head{display:flex; align-items:center; justify-content:space-between; padding:2px 4px}
@@ -262,6 +263,7 @@
       <div class="title" id="mTitle">September<small>2026</small></div>
       <button type="button" id="mNext" aria-label="Nächster Monat">›</button>
     </div>
+    <div id="accChips" style="display:none; flex-wrap:wrap; gap:6px; justify-content:center"></div>
     <div class="grid2">
       <div>
         <div class="card hero" id="hero"></div>
@@ -421,6 +423,7 @@
   <label>Name</label><input id="accN" placeholder="z.B. ING Giro">
   <label>Art</label><select id="accT"><option value="giro">Girokonto</option><option value="spar">Sparkonto / Extra-Konto</option><option value="kredit">Kreditkarte</option><option value="bar">Bargeld</option><option value="depot">Depot</option><option value="sonst">Sonstiges</option></select>
   <label>Bank</label><select id="accB"><option value="ing">ING</option><option value="manuell">Ohne Import, nur von Hand</option></select>
+  <label>IBAN, letzte vier Ziffern (für die Zuordnung beim Import)</label><input id="accI" inputmode="numeric" maxlength="4" placeholder="z.B. 4711">
   <label>Kontostand Anfang, in €</label><input id="accS" inputmode="decimal" placeholder="0,00">
   <div class="hint">Der Anfangsstand ist der Saldo vor der ersten eingelesenen Buchung. Danach rechnet Riznica den Verlauf aus den Buchungen fort.</div>
   <div class="err" id="accErr"></div>
@@ -441,6 +444,7 @@
   <div class="row" style="margin-top:12px"><label style="margin:0">Fixkosten (Miete, Abos, Versicherungen)</label><button class="sw" type="button" id="c1Fix"></button></div>
   <div class="row" style="margin-top:12px"><label style="margin:0">Zählt als Einnahme</label><button class="sw" type="button" id="c1In"></button></div>
   <div class="row" style="margin-top:12px"><label style="margin:0">Umbuchung, kein Verbrauch (Sparen, Kreditkarte)</label><button class="sw" type="button" id="c1Tr"></button></div>
+  <div id="c1MirrorWrap" style="display:none"><label>Gegenkonto: Buchungen dieser Kategorie spiegeln sich dort automatisch</label><select id="c1Mirror"></select><div class="hint">Zum Beispiel „Sparen & Investieren“ mit deinem Sparkonto verknüpfen: −100 € auf dem Giro ergeben +100 € auf dem Sparkonto, ohne dessen Auszug einzulesen.</div></div>
   <div class="err" id="c1Err"></div>
   <div class="actions"><button class="btn danger" type="button" id="c1Del" style="flex:0 0 auto">Löschen</button><button class="btn" type="button" id="c1Cancel">Abbrechen</button><button class="btn primary" type="button" id="c1Save">Sichern</button></div>
 </div></div>
@@ -676,7 +680,7 @@ function parseINGText(text){
 <script>
 (function(){
 "use strict";
-const APP_VERSION="2026-09-24-10";
+const APP_VERSION="2026-09-24-13";
 /* ---------- Ablage ---------- */
 const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1", ARCH="rz_archive_v1", ARCHK="rz_archive_key_v1";
 const LOCAL_ONLY=[SYNC, UI];                    // bleibt strikt auf dem Gerät
@@ -725,14 +729,14 @@ const DEFAULT_CATS=[
 const BUILTIN_RULES=[
   ["rewe","lebensmittel"],["edeka","lebensmittel"],["aldi","lebensmittel"],["lidl","lebensmittel"],["netto","lebensmittel"],["penny","lebensmittel"],["kaufland","lebensmittel"],["real,-","lebensmittel"],["nahkauf","lebensmittel"],["denn's","lebensmittel"],["alnatura","lebensmittel"],["bio company","lebensmittel"],["dm-drogerie","lebensmittel"],["dm drogerie","lebensmittel"],["rossmann","lebensmittel"],["müller","lebensmittel"],["bäcker","lebensmittel"],["baeckerei","lebensmittel"],["backwerk","lebensmittel"],["kamps","lebensmittel"],["metzger","lebensmittel"],["picnic","lebensmittel"],["flink","lebensmittel"],["gorillas","lebensmittel"],["getir","lebensmittel"],["knuspr","lebensmittel"],
   ["mcdonald","restaurant"],["burger king","restaurant"],["kfc","restaurant"],["subway","restaurant"],["starbucks","restaurant"],["lieferando","restaurant"],["wolt","restaurant"],["uber eats","restaurant"],["ubereats","restaurant"],["restaurant","restaurant"],["ristorante","restaurant"],["pizzeria","restaurant"],["pizza","restaurant"],["sushi","restaurant"],["café","restaurant"],["cafe ","restaurant"],["coffee","restaurant"],["kaffee","restaurant"],["bistro","restaurant"],["imbiss","restaurant"],["döner","restaurant"],["kebap","restaurant"],["brauhaus","restaurant"],["gastst","restaurant"],["l'osteria","restaurant"],["vapiano","restaurant"],["hans im glück","restaurant"],["five guys","restaurant"],["dean&david","restaurant"],["dean & david","restaurant"],
-  ["db vertrieb","mobilitaet"],["deutsche bahn","mobilitaet"],["db bahn","mobilitaet"],["bahn ag","mobilitaet"],["flixbus","mobilitaet"],["flixtrain","mobilitaet"],["rheinbahn","mobilitaet"],["vrr","mobilitaet"],["vrs","mobilitaet"],["deutschlandticket","mobilitaet"],["uber","mobilitaet"],["bolt","mobilitaet"],["free now","mobilitaet"],["freenow","mobilitaet"],["taxi","mobilitaet"],["aral","mobilitaet"],["shell","mobilitaet"],["esso","mobilitaet"],["total ","mobilitaet"],["totalenergies","mobilitaet"],["jet ","mobilitaet"],["tankstelle","mobilitaet"],["star tank","mobilitaet"],["hem ","mobilitaet"],["parken","mobilitaet"],["parkhaus","mobilitaet"],["parkraum","mobilitaet"],["easypark","mobilitaet"],["tier ","mobilitaet"],["lime","mobilitaet"],["voi ","mobilitaet"],["nextbike","mobilitaet"],["share now","mobilitaet"],["miles","mobilitaet"],["sixt","mobilitaet"],["kfz","mobilitaet"],["werkstatt","mobilitaet"],["atu ","mobilitaet"],["tüv","mobilitaet"],["dekra","mobilitaet"],
+  ["db vertrieb","mobilitaet"],["deutsche bahn","mobilitaet"],["db bahn","mobilitaet"],["bahn ag","mobilitaet"],["flixbus","mobilitaet"],["flixtrain","mobilitaet"],["rheinbahn","mobilitaet"],["vrr","mobilitaet"],["vrs","mobilitaet"],["deutschlandticket","mobilitaet"],["uber *","mobilitaet"],["uber bv","mobilitaet"],["uber trip","mobilitaet"],["bolt","mobilitaet"],["free now","mobilitaet"],["freenow","mobilitaet"],["taxi","mobilitaet"],["aral ","mobilitaet"],["aral ag","mobilitaet"],["shell","mobilitaet"],[" esso ","mobilitaet"],["esso station","mobilitaet"],["esso deutschland","mobilitaet"],["total ","mobilitaet"],["totalenergies","mobilitaet"],["jet ","mobilitaet"],["tankstelle","mobilitaet"],["star tank","mobilitaet"],["hem ","mobilitaet"],["parken","mobilitaet"],["parkhaus","mobilitaet"],["parkraum","mobilitaet"],["easypark","mobilitaet"],["tier ","mobilitaet"],["lime","mobilitaet"],["voi ","mobilitaet"],["nextbike","mobilitaet"],["share now","mobilitaet"],["miles","mobilitaet"],["sixt","mobilitaet"],["kfz","mobilitaet"],["werkstatt","mobilitaet"],["atu ","mobilitaet"],["tüv","mobilitaet"],["dekra","mobilitaet"],
   ["netflix","abos"],["spotify","abos"],["apple.com/bill","abos"],["apple services","abos"],["itunes","abos"],["icloud","abos"],["google","abos"],["youtube","abos"],["amazon prime","abos"],["prime video","abos"],["disney","abos"],["dazn","abos"],["sky ","abos"],["wow ","abos"],["paramount","abos"],["telekom","abos"],["vodafone","abos"],["o2 ","abos"],["telefonica","abos"],["1&1","abos"],["1und1","abos"],["congstar","abos"],["fraenk","abos"],["aldi talk","abos"],["freenet","abos"],["unitymedia","abos"],["pyur","abos"],["adobe","abos"],["microsoft","abos"],["dropbox","abos"],["notion","abos"],["openai","abos"],["chatgpt","abos"],["anthropic","abos"],["claude","abos"],["canva","abos"],["figma","abos"],["github","abos"],["rundfunk","abos"],["ard zdf","abos"],["beitragsservice","abos"],["audible","abos"],["kindle","abos"],
-  ["amazon","shopping"],["amzn","shopping"],["zalando","shopping"],["about you","shopping"],["h&m","shopping"],["h & m","shopping"],["zara","shopping"],["c&a","shopping"],["primark","shopping"],["uniqlo","shopping"],["nike","shopping"],["adidas","shopping"],["snipes","shopping"],["foot locker","shopping"],["ikea","shopping"],["mediamarkt","shopping"],["media markt","shopping"],["saturn","shopping"],["apple store","shopping"],["otto","shopping"],["ebay","shopping"],["kleinanzeigen","shopping"],["temu","shopping"],["shein","shopping"],["tedi","shopping"],["woolworth","shopping"],["douglas","shopping"],["thalia","shopping"],["hugendubel","shopping"],["obi","shopping"],["bauhaus","shopping"],["hornbach","shopping"],["toom","shopping"],["decathlon","shopping"],["intersport","shopping"],["paypal","shopping"],["klarna","shopping"],
+  ["amazon","shopping"],["amzn","shopping"],["zalando","shopping"],["about you","shopping"],["h&m","shopping"],["h & m","shopping"],["zara","shopping"],["c&a","shopping"],["primark","shopping"],["uniqlo","shopping"],["nike","shopping"],["adidas","shopping"],["snipes","shopping"],["foot locker","shopping"],["ikea","shopping"],["mediamarkt","shopping"],["media markt","shopping"],["saturn","shopping"],["apple store","shopping"],["otto","shopping"],["ebay","shopping"],["kleinanzeigen","shopping"],["temu","shopping"],["shein","shopping"],["tedi","shopping"],["woolworth","shopping"],["douglas","shopping"],["thalia","shopping"],["hugendubel","shopping"],["obi ","shopping"],[" obi","shopping"],["bauhaus","shopping"],["hornbach","shopping"],["toom","shopping"],["decathlon","shopping"],["intersport","shopping"],["paypal","shopping"],["klarna","shopping"],
   ["apotheke","gesundheit"],["arzt","gesundheit"],["praxis","gesundheit"],["zahn","gesundheit"],["physio","gesundheit"],["optik","gesundheit"],["fielmann","gesundheit"],["apollo","gesundheit"],["docmorris","gesundheit"],["shop apotheke","gesundheit"],["krankenhaus","gesundheit"],["klinik","gesundheit"],["therapie","gesundheit"],
   ["mcfit","freizeit"],["fitx","freizeit"],["fitness","freizeit"],["gym","freizeit"],["urban sports","freizeit"],["john reed","freizeit"],["clever fit","freizeit"],["kino","freizeit"],["cinema","freizeit"],["cinemaxx","freizeit"],["theater","freizeit"],["konzert","freizeit"],["eventim","freizeit"],["ticketmaster","freizeit"],["steam","freizeit"],["playstation","freizeit"],["nintendo","freizeit"],["xbox","freizeit"],["schwimmbad","freizeit"],["bowling","freizeit"],["verein","freizeit"],["sportverein","freizeit"],
   ["booking.com","reisen"],["airbnb","reisen"],["hotel","reisen"],["ryanair","reisen"],["eurowings","reisen"],["lufthansa","reisen"],["easyjet","reisen"],["condor","reisen"],["check24","reisen"],["expedia","reisen"],["trivago","reisen"],["hostel","reisen"],["flug","reisen"],
   ["versicherung","versicherung"],["allianz","versicherung"],["huk","versicherung"],["ergo","versicherung"],["axa","versicherung"],["debeka","versicherung"],["signal iduna","versicherung"],["r+v","versicherung"],["devk","versicherung"],["hansemerkur","versicherung"],["getsafe","versicherung"],["lemonade","versicherung"],["techniker","versicherung"],["barmer","versicherung"],["aok","versicherung"],["krankenkasse","versicherung"],["krankenversicherung","versicherung"],["haftpflicht","versicherung"],
-  ["miete","wohnen"],["kaltmiete","wohnen"],["warmmiete","wohnen"],["nebenkosten","wohnen"],["hausverwaltung","wohnen"],["wohnung","wohnen"],["stadtwerke","wohnen"],["strom","wohnen"],["gas ","wohnen"],["energie","wohnen"],["eon","wohnen"],["e.on","wohnen"],["vattenfall","wohnen"],["enbw","wohnen"],["rwe","wohnen"],["innogy","wohnen"],["tibber","wohnen"],["octopus","wohnen"],["wasser","wohnen"],["abfall","wohnen"],["awista","wohnen"],
+  ["miete","wohnen"],["kaltmiete","wohnen"],["warmmiete","wohnen"],["nebenkosten","wohnen"],["hausverwaltung","wohnen"],["wohnung","wohnen"],["stadtwerke","wohnen"],["strom","wohnen"],["gas ","wohnen"],["energie","wohnen"],["eon energie","wohnen"],["eon se","wohnen"],["e.on","wohnen"],["vattenfall","wohnen"],["enbw","wohnen"],["innogy","wohnen"],["tibber","wohnen"],["octopus","wohnen"],["wasser","wohnen"],["abfall","wohnen"],["awista","wohnen"],
   ["udemy","bildung"],["coursera","bildung"],["skillshare","bildung"],["masterclass","bildung"],["universit","bildung"],["hochschule","bildung"],["semesterbeitrag","bildung"],["studierendenwerk","bildung"],["schule","bildung"],["kurs","bildung"],["seminar","bildung"],
   ["spende","geschenke"],["geschenk","geschenke"],["kollekte","geschenke"],["kirche","geschenke"],["caritas","geschenke"],["misereor","geschenke"],["adveniat","geschenke"],["unicef","geschenke"],["patreon","geschenke"],
   ["bargeld","bargeld"],["geldautomat","bargeld"],["auszahlung","bargeld"],["atm","bargeld"],["cash group","bargeld"],["abhebung","bargeld"],
@@ -801,14 +805,14 @@ async function sha(s){ const h=await subtle().digest("SHA-256",new TextEncoder()
 let sessKey=null, sessPw=null, lockTimer=null, cryptoCfg=read(CRYPTO,null);
 function locked(){ return !sessKey; }
 function touchLock(){ clearTimeout(lockTimer); if(!locked() && cfg.autoLock>0) lockTimer=setTimeout(lock, cfg.autoLock*60000); }
-function lock(){ sessKey=null; sessPw=null; rawCache=null; archCache=null; archKey=null; clearTimeout(lockTimer); try{ discardPending(); }catch(e){} renderLock(); renderAll(); }
+function lock(){ sessKey=null; sessPw=null; rawCache=null; archCache=null; archKey=null; idsCache=null; clearTimeout(lockTimer); try{ discardPending(); }catch(e){} renderLock(); renderAll(); }
 async function unlockWith(pw){
   if(!cryptoCfg){ // erstes Passwort
     const salt=window.crypto.getRandomValues(new Uint8Array(16));
     const key=await deriveKey(pw,salt,KDF_IT);
     const check=await encKey(key,"riznica");
     cryptoCfg={salt:b64(salt),check:check,it:KDF_IT}; write(CRYPTO,cryptoCfg);
-    sessKey=key; sessPw=pw; rawCache={}; touchLock(); return true;
+    sessKey=key; sessPw=pw; rawCache={}; await loadIds(); touchLock(); return true;
   }
   const key=await deriveKey(pw,unb64(cryptoCfg.salt),cryptoCfg.it||KDF_IT);
   try{ const t=await decKey(key,cryptoCfg.check); if(t!=="riznica") return false; }catch(e){ return false; }
@@ -839,6 +843,7 @@ async function pwSubmit(){
     const ok=await unlockWith(p1);
     if(!ok){ $("pwErr").textContent="Passwort stimmt nicht."; $("pwOk").disabled=false; return; }
   }catch(e){ $("pwErr").textContent="Verschlüsselung nicht verfügbar (HTTPS oder lokale Datei nötig)."; $("pwOk").disabled=false; return; }
+  try{ if(window.__onUnlock) await window.__onUnlock(); }catch(e){}
   $("pwOk").disabled=false; $("pwErr").textContent=""; $("pwOv").classList.remove("open");
   renderLock(); renderAll(); const r=pwResolve; pwResolve=null; if(r) r(true);
 }
@@ -851,6 +856,7 @@ async function ensureUnlocked(text){
 /* ---------- Rohbuchungen: je Tag ein verschlüsselter Block ---------- */
 let rawCache=null;          // {date:[tx,...]} entschlüsselt, nur wenn offen
 async function loadRaw(){
+  await loadIds();
   const store=read(TX,{}); rawCache={};
   for(const d of Object.keys(store)){ try{ rawCache[d]=JSON.parse(await decKey(sessKey,store[d])); }catch(e){ rawCache[d]=[]; } }
 }
@@ -860,12 +866,25 @@ async function saveDays(days){
   write(TX,store);
 }
 function allRaw(){ const out=[]; if(!rawCache) return out; Object.keys(rawCache).sort().forEach(d=>rawCache[d].forEach(t=>out.push(t))); return out; }
+/* Fingerabdrücke liegen verschlüsselt ab (nur beim Import gebraucht, und der ist immer entsperrt) */
+let idsCache=null;
+function readIds(){ if(idsCache) return idsCache; return idsCache={}; }
+async function loadIds(){ const p=read(IDS,null); idsCache={}; if(!p) return; if(p.ct){ try{ idsCache=JSON.parse(await decKey(sessKey,p)); }catch(e){ idsCache={}; } } else { idsCache=p; } }   // Altbestand im Klartext wird beim nächsten Schreiben verschlüsselt
+async function flushIds(){ if(!sessKey||!idsCache) return; write(IDS,await encKey(sessKey,JSON.stringify(idsCache))); }
 /* Fingerabdrücke: id -> {d:Datum, s:Quelle}. Dazu ein loser Schlüssel Konto|Datum|Betrag,
    damit dieselbe Buchung aus CSV und PDF nicht doppelt landet, obwohl die Texte abweichen. */
 function idEntry(v){ return typeof v==="string"?{d:v,s:"pdf"}:(v||null); }
 function looseKey(t){ return "L:"+t.acc+"|"+t.date+"|"+Number(t.amount).toFixed(2); }
-function registerId(ids,t,src){ ids[t.id]={d:t.date,s:src}; const lk=looseKey(t); const cur=ids[lk]; if(!cur||typeof cur==="string") ids[lk]={d:t.date,s:src,n:1}; else { cur.n=(cur.n||1)+1; if(cur.s!==src) cur.s="mix"; } }
-function isDup(ids,t,src){ if(ids[t.id]) return true; const cur=idEntry(ids[looseKey(t)]); return !!(cur && cur.s!==src); }
+function registerId(ids,t,src){ ids[t.id]={d:t.date,s:src}; const lk=looseKey(t); let cur=ids[lk]; if(!cur||typeof cur==="string"||!cur.c) cur=ids[lk]={d:t.date,c:{}}; cur.c[src]=(cur.c[src]||0)+1; }
+// Dublette: derselbe Fingerabdruck, oder gleiche Konto|Datum|Betrag-Kombination aus einer anderen Quelle,
+// gezählt: zwei gleiche Käufe am selben Tag aus dem Auszug bleiben zwei, wenn die CSV auch zwei hatte
+function isDup(ids,t,src,seenInBatch){
+  if(ids[t.id]) return true;
+  const cur=ids[looseKey(t)]; if(!cur) return false;
+  let other=0; if(typeof cur==="string") other=1; else if(cur.c){ Object.keys(cur.c).forEach(s=>{ if(s!==src) other=Math.max(other,cur.c[s]); }); } else if(cur.s&&cur.s!==src) other=1;
+  const k=looseKey(t); const i=seenInBatch?(seenInBatch[k]=(seenInBatch[k]||0)+1)-1:0;
+  return other>i;
+}
 
 /* ---------- Archiv: älter als die Sichtfrist, zweites Passwort ---------- */
 let archKey=null, archCache=null;
@@ -898,8 +917,8 @@ async function pruneOld(){
     delete store[d]; n++; if(rawCache) delete rawCache[d]; const m=ym(d); if(fro.indexOf(m)<0) fro.push(m);
   }
   if(n){ write(TX,store); write(SUMS,sums); if(ak) write(ARCH,arch); }
-  const ids=read(IDS,{}); const cut2=new Date(); cut2.setFullYear(cut2.getFullYear()-3); const c2=ymd(cut2); let m=0;
-  Object.keys(ids).forEach(k=>{ const e=idEntry(ids[k]); if(e&&e.d<c2){ delete ids[k]; m++; } }); if(m) write(IDS,ids);
+  if(!locked()){ const ids=readIds(); const cut2=new Date(); cut2.setFullYear(cut2.getFullYear()-3); const c2=ymd(cut2); let m=0;
+    Object.keys(ids).forEach(k=>{ const e=idEntry(ids[k]); if(e&&e.d<c2){ delete ids[k]; m++; } }); if(m) await flushIds(); }
   return n;
 }
 function allArch(){ const out=[]; if(!archCache) return out; Object.keys(archCache).sort().forEach(d=>archCache[d].forEach(t=>out.push(t))); return out; }
@@ -912,12 +931,12 @@ function applyDelta(t,sign){
   const a=sums[m]=sums[m]||{}; const s=a[t.acc]=a[t.acc]||{}; const c=s[t.cat]=s[t.cat]||{out:0,in:0,n:0};
   if(t.amount<0) c.out=Math.round((c.out-sign*t.amount)*100)/100; else c.in=Math.round((c.in+sign*t.amount)*100)/100; c.n+=sign; if(c.n<=0&&!c.out&&!c.in) delete s[t.cat];
   const b=bal[t.acc]=bal[t.acc]||{}; Object.keys(b).forEach(k=>{ if(k>=m) b[k]=Math.round((b[k]+sign*t.amount)*100)/100; });
-  const ids=read(IDS,{}); if(sign>0&&!ids[t.id]) registerId(ids,t,t.src||"pdf"); write(IDS,ids);
+  const ids=readIds(); if(sign>0&&!ids[t.id]) registerId(ids,t,t.src||"pdf"); flushIds();
   write(SUMS,sums); write(BAL,bal);
 }
 function recomputeSums(){
   if(!rawCache) return;
-  const sums=read(SUMS,{}), bal=read(BAL,{}), ids=read(IDS,{}); const fro=sums._frozen||[];
+  const sums=read(SUMS,{}), bal=read(BAL,{}), ids=readIds(); const fro=sums._frozen||[];
   const months={}; allRaw().forEach(t=>{ const m=ym(t.date); if(!ids[t.id]) registerId(ids,t,t.src||"pdf"); if(fro.indexOf(m)>=0) return; (months[m]=months[m]||[]).push(t); });
   Object.keys(months).forEach(m=>{
     const s={}; months[m].forEach(t=>{ const a=s[t.acc]=s[t.acc]||{}; const c=a[t.cat]=a[t.cat]||{out:0,in:0,n:0}; if(t.amount<0) c.out+=-t.amount; else c.in+=t.amount; c.n++; });
@@ -934,12 +953,16 @@ function recomputeSums(){
     let m=first; const last=ms[ms.length-1];
     while(m<=last){ (months[m]||[]).forEach(t=>{ if(t.acc===a.id) run+=t.amount; }); b[m]=Math.round(run*100)/100; m=addMonths(m,1); }
   });
-  write(SUMS,sums); write(BAL,bal); write(IDS,ids);
+  write(SUMS,sums); write(BAL,bal); flushIds();
 }
 function monthSums(m,accId){ const s=read(SUMS,{})[m]||{}; if(m==="_frozen") return {}; const out={}; Object.keys(s).forEach(a=>{ if(accId&&a!==accId) return; Object.keys(s[a]).forEach(c=>{ const o=out[c]=out[c]||{out:0,in:0,n:0}; o.out+=s[a][c].out; o.in+=s[a][c].in; o.n+=s[a][c].n; }); }); return out; }
+// Sparen zählt nur aus Sicht der Ausgabenkonten (Giro, Bargeld, Kreditkarte), damit Hin- und Rückbuchungen nicht verschwinden
+function isSpendingAcc(id){ const a=acc(id); return !a || ["giro","bar","kredit","sonst"].indexOf(a.type)>=0; }
+function isSavingCat(k){ if(!k||!k.transfer) return false; if(k.mirrorAcc){ const a=acc(k.mirrorAcc); return !!a && (a.type==="spar"||a.type==="depot"); } return k.id==="sparen"; }
 function monthTotals(m,accId){
-  const s=monthSums(m,accId); let out=0,inc=0,save=0,fix=0,vari=0;
-  Object.keys(s).forEach(c=>{ const k=cat(c); if(k.transfer){ save+=s[c].out-s[c].in; return; } if(k.income){ inc+=s[c].in-s[c].out; return; } out+=s[c].out-s[c].in; if(k.fix) fix+=s[c].out-s[c].in; else vari+=s[c].out-s[c].in; });
+  const all=read(SUMS,{})[m]||{}; const s=monthSums(m,accId); let out=0,inc=0,save=0,fix=0,vari=0;
+  Object.keys(s).forEach(c=>{ const k=cat(c); if(k.transfer) return; if(k.income){ inc+=s[c].in-s[c].out; return; } out+=s[c].out-s[c].in; if(k.fix) fix+=s[c].out-s[c].in; else vari+=s[c].out-s[c].in; });
+  Object.keys(all).forEach(a=>{ if(accId&&a!==accId) return; if(!isSpendingAcc(a)) return; Object.keys(all[a]).forEach(c=>{ if(isSavingCat(cat(c))) save+=all[a][c].out-all[a][c].in; }); });
   return {out:out, inc:inc, save:save, fix:fix, vari:vari, net:inc-out-save, cats:s};
 }
 // Offene Auslagen über alle Monate: was ausgelegt, aber noch nicht zurück ist
@@ -963,10 +986,14 @@ async function pdfToPages(buf){
 function decodeCsv(buf){ const u=new Uint8Array(buf); const utf=new TextDecoder("utf-8",{fatal:false}).decode(u); if(u[0]===0xEF&&u[1]===0xBB) return utf; if(/\uFFFD/.test(utf)){ try{ return new TextDecoder("windows-1252").decode(u); }catch(e){ return utf; } } return utf; }
 function wipe(buf){ try{ new Uint8Array(buf).fill(0); }catch(e){} }   // Dateiinhalt im Arbeitsspeicher überschreiben
 function discardPending(){ pending=null; if($("impBox")) $("impBox").style.display="none"; if($("impInfo")) $("impInfo").style.display="none"; if($("impList")) $("impList").innerHTML=""; if($("fileIn")) $("fileIn").value=""; }
-async function handleFiles(files){
+let importAccId=null;
+function ingAccounts(){ return cfg.accounts.filter(x=>x.bank==="ing"); }
+function matchIban(iban){ if(!iban) return null; const tail=iban.replace(/\s/g,"").slice(-4); return cfg.accounts.find(x=>x.iban && x.iban.replace(/\s/g,"").slice(-4)===tail)||null; }
+async function handleFiles(files,chosen){
   if(!files||!files.length) return;
   files=[...files]; try{ $("fileIn").value=""; }catch(e){}   // Verweis auf die Datei sofort loslassen
-  const a=importAccount(); if(!a){ toast("Erst ein Konto mit Bank ING anlegen"); showTab("mehr"); return; }
+  const cands=ingAccounts(); if(!cands.length){ toast("Erst ein Konto mit Bank ING anlegen"); showTab("mehr"); return; }
+  let a=chosen?acc(chosen):(cands.length===1?cands[0]:null);
   if(!(await ensureUnlocked("Zum Einlesen wird das Passwort gebraucht: die Buchungen werden sofort verschlüsselt abgelegt."))) return;
   showTab("import");
   $("impInfo").style.display=""; $("impInfo").innerHTML='<span class="muted">liest …</span>'; $("impBox").style.display="none";
@@ -979,19 +1006,37 @@ async function handleFiles(files){
       try{
         buf=await f.arrayBuffer();
         let r; if(isCsv){ r=parseINGCsv(decodeCsv(buf)); } else { r=parseING(await pdfToPages(buf)); r.src="pdf"; }
-        r.tx.forEach(t=>{ t.acc=a.id; t.src=r.src||"pdf"; all.push(t); }); infos.push(r); warns.push(...r.warn.map(w=>f.name+": "+w));
+        r.file=f.name; r.src=r.src||"pdf"; r.tx.forEach(t=>{ t.src=r.src; t.iban=r.iban||null; }); infos.push(r); warns.push(...r.warn.map(w=>f.name+": "+w));
       }catch(e){ warns.push(f.name+": konnte nicht gelesen werden ("+(e&&e.message||"?")+")"); }
       finally{ if(buf) wipe(buf); buf=null; }
     }
-    const ids=read(IDS,{});
-    for(const t of all){ t.id=await txId(t); t.dup=isDup(ids,t,t.src); t.cat=t.dup&&rawCache?((allRaw().find(x=>x.id===t.id)||{}).cat||classify(t.name,t.purpose,t.type,t.amount)):classify(t.name,t.purpose,t.type,t.amount); }
+    // Konto zuordnen: erst über die IBAN im Auszug, sonst über die Wahl, sonst fragen
+    infos.forEach(r=>{ r.acc=(matchIban(r.iban)||a||null); });
+    const unresolved=infos.filter(r=>!r.acc&&r.tx.length);
+    if(unresolved.length){
+      const names=unresolved.map(r=>r.file).join(", ");
+      $("impInfo").innerHTML='<div><b>Welches Konto?</b></div><div class="small muted" style="margin:4px 0 10px">Für '+esc(names)+' ist keine IBAN hinterlegt. Unter Mehr → Konto kannst du die letzten vier Ziffern der IBAN eintragen, dann entfällt die Frage.</div><div class="row" style="flex-wrap:wrap; gap:6px; justify-content:flex-start">'+cands.map(x=>'<button type="button" class="btn" data-acc="'+x.id+'">'+esc(x.name)+'</button>').join("")+'</div>';
+      $("impInfo").querySelectorAll("button[data-acc]").forEach(bt=>bt.addEventListener("click",()=>{ const id=bt.dataset.acc; infos.forEach(r=>{ if(!r.acc) r.acc=acc(id); }); finishImport(infos,warns); }));
+      return;
+    }
+    await finishImport(infos,warns);
+  }catch(e){ $("impInfo").innerHTML='<div class="err">Beim Einlesen ist etwas schiefgegangen: '+esc(e&&e.message||e)+'</div>'; pending=null; }
+}
+async function finishImport(infos,warns){
+  try{
+    const all=[]; infos.forEach(r=>{ if(!r.acc) return; r.tx.forEach(t=>{ t.acc=r.acc.id; all.push(t); }); });
+    const isCsv=infos.some(i=>i.src==="csv"), a=infos.map(i=>i.acc).find(Boolean);
     all.sort((x,y)=>x.date<y.date?-1:x.date>y.date?1:0);
-    pending={tx:all, infos:infos, acc:a.id};
+    const ids=readIds(), seen={};
+    for(const t of all){ t.id=await txId(t); t.dup=isDup(ids,t,t.src,seen); t.cat=t.dup&&rawCache?((allRaw().find(x=>x.id===t.id)||{}).cat||classify(t.name,t.purpose,t.type,t.amount)):classify(t.name,t.purpose,t.type,t.amount); }
+    pending={tx:all, infos:infos, acc:a?a.id:null};
     const fresh=all.filter(t=>!t.dup).length, dups=all.length-fresh;
     const per=infos.map(i=>i.period).filter(Boolean).join(", ");
-    let html='<div class="row"><b>'+all.length+' Buchung'+(all.length===1?'':'en')+(infos.some(i=>i.src==="csv")?' aus der Umsatzanzeige':'')+'</b><span class="muted small">'+esc(per)+'</span></div>';
+    const accNames=[...new Set(infos.filter(i=>i.acc).map(i=>i.acc.name))].join(", ");
+    let html='<div class="row"><b>'+all.length+' Buchung'+(all.length===1?'':'en')+(isCsv?' aus der Umsatzanzeige':'')+'</b><span class="muted small">'+esc(per)+'</span></div>';
+    html+='<div class="small faint" style="margin-top:4px">Konto: '+esc(accNames||"–")+'</div>';
     if(dups) html+='<div class="small faint" style="margin-top:4px">'+dups+' davon schon vorhanden. Sie werden nicht doppelt angelegt, die Kategorie kannst du trotzdem anpassen.</div>';
-    const ns=infos.map(i=>i.neuerSaldo).filter(v=>v!=null); if(ns.length) html+='<div class="small faint" style="margin-top:4px">Saldo laut Datei: '+esc(eur(ns[ns.length-1]))+'</div>';
+    const latest=latestInfo(infos); if(latest&&latest.neuerSaldo!=null) html+='<div class="small faint" style="margin-top:4px">Saldo laut '+(latest.src==="csv"?"Umsatzanzeige":"Auszug")+': '+esc(eur(latest.neuerSaldo))+'</div>';
     warns.forEach(w=>html+='<div class="err">'+esc(w)+'</div>');
     $("impInfo").innerHTML=html;
     if(!all.length){ pending=null; return; }
@@ -1001,6 +1046,8 @@ async function handleFiles(files){
     $("impOk").disabled=!fresh; $("impOk").textContent=fresh?"Übernehmen":"Fertig";
   }catch(e){ $("impInfo").innerHTML='<div class="err">Beim Einlesen ist etwas schiefgegangen: '+esc(e&&e.message||e)+'</div>'; pending=null; }
 }
+// Der Auszug mit dem spätesten Datum liefert den maßgeblichen Saldo, egal in welcher Reihenfolge die Dateien kamen
+function latestInfo(infos){ let best=null,bd=""; infos.forEach(r=>{ if(r.neuerSaldo==null||!r.tx.length) return; const d=r.tx.reduce((m,t)=>t.date>m?t.date:m,""); if(d>bd){ bd=d; best=r; } }); return best; }
 function importAccount(){ const a=cfg.accounts.filter(x=>x.bank==="ing"); if(!a.length) return null; return a.find(x=>x.id===cfg.primary)||a[0]; }
 function catSelect(cur,cls){ const c=cat(cur); return '<select class="'+(cls||"cpick")+'" style="--c-tint:'+tint(c.color)+'">'+cfg.categories.map(k=>'<option value="'+k.id+'"'+(k.id===cur?' selected':'')+'>'+esc(k.icon+" "+k.name)+'</option>').join("")+'</select>'; }
 function sameParty(a,b){ const ka=(a.name||"").toLowerCase().slice(0,24), kb=(b.name||"").toLowerCase().slice(0,24); return ka.length>=3 && ka===kb && dirOf(a.amount)===dirOf(b.amount); }
@@ -1033,25 +1080,42 @@ function renderPreview(){
 }
 async function applyDupChanges(){
   if(locked()) return; const days=new Set();
-  pending.tx.forEach(o=>{ if(!o.dup) return; const r=allRaw().find(x=>x.id===o.id); if(r&&r.cat!==o.cat){ if(isFrozen(ym(r.date))){ applyDelta(r,-1); r.cat=o.cat; applyDelta(r,1); } else r.cat=o.cat; days.add(r.date); } });
+  pending.tx.forEach(o=>{ if(!o.dup) return; const r=allRaw().find(x=>x.id===o.id); if(r&&r.cat!==o.cat){ if(isFrozen(ym(r.date))){ applyDelta(r,-1); r.cat=o.cat; applyDelta(r,1); } else r.cat=o.cat; days.add(r.date); syncMirror(r,days); } });
   if(days.size){ await saveDays([...days]); recomputeSums(); }
 }
 async function commitImport(){
   if(!pending||locked()) return;
   const fresh=pending.tx.filter(t=>!t.dup); if(!fresh.length) return;
-  const a=acc(pending.acc);
-  // Anfangsstand aus dem Auszug ableiten, falls noch keiner gesetzt ist
-  if(a && a.start==null){ const ns=pending.infos.map(i=>i.neuerSaldo).filter(v=>v!=null); if(ns.length){ const sum=pending.tx.reduce((s,t)=>s+t.amount,0); const before=ns[ns.length-1]-sum; const firstM=ym(fresh[0].date); const bal=read(BAL,{}); bal[a.id]=bal[a.id]||{}; if(!Object.keys(bal[a.id]).length){ a.start=Math.round(before*100)/100; saveCfg(); } } }
+  // Anfangsstand je Konto aus dem spätesten Auszug ableiten, falls noch keiner gesetzt ist
+  const byAcc={}; pending.infos.forEach(r=>{ if(r.acc) (byAcc[r.acc.id]=byAcc[r.acc.id]||[]).push(r); });
+  Object.keys(byAcc).forEach(id=>{ const a=acc(id); if(!a||a.start!=null) return; const bal=read(BAL,{}); if(bal[id]&&Object.keys(bal[id]).length) return;
+    const latest=latestInfo(byAcc[id]); if(!latest) return; const end=latest.tx.reduce((m,t)=>t.date>m?t.date:m,"");
+    const sum=pending.tx.filter(t=>t.acc===id&&t.date<=end).reduce((s,t)=>s+t.amount,0); a.start=Math.round((latest.neuerSaldo-sum)*100)/100; });
+  saveCfg();
   const days=new Set();
-  const ids=read(IDS,{});
-  fresh.forEach(t=>{ const o={id:t.id,acc:t.acc,date:t.date,valuta:t.valuta,type:t.type,name:t.name,purpose:t.purpose,amount:t.amount,cat:t.cat,src:t.src}; (rawCache[t.date]=rawCache[t.date]||[]).push(o); days.add(t.date); registerId(ids,o,t.src||"pdf"); if(isFrozen(ym(t.date))) applyDelta(o,1); });
-  write(IDS,ids);
+  const ids=readIds();
+  const made=[]; fresh.forEach(t=>{ const o={id:t.id,acc:t.acc,date:t.date,valuta:t.valuta,type:t.type,name:t.name,purpose:t.purpose,amount:t.amount,cat:t.cat,src:t.src}; (rawCache[t.date]=rawCache[t.date]||[]).push(o); days.add(t.date); registerId(ids,o,t.src||"pdf"); if(isFrozen(ym(t.date))) applyDelta(o,1); made.push(o); });
+  await flushIds(); made.forEach(o=>syncMirror(o,days));
   await saveDays([...days]); recomputeSums(); await pruneOld();
   toast(fresh.length+" Buchungen übernommen. Die PDF kannst du jetzt aus Downloads löschen.");
   discardPending();
   viewMonth=ym(fresh[fresh.length-1].date); showTab("uebersicht"); renderAll();
 }
 
+/* ---------- Gegenbuchungen auf dem verknüpften Konto (Sparen, Depot) ---------- */
+function mirrorId(t){ return "mir"+t.id; }
+function findTx(id){ let hit=null; if(!rawCache) return null; Object.keys(rawCache).some(d=>rawCache[d].some(t=>{ if(t.id===id){ hit=t; return true; } })); return hit; }
+function removeTx(id,days){ Object.keys(rawCache).forEach(d=>{ const n=rawCache[d].length; rawCache[d]=rawCache[d].filter(t=>t.id!==id); if(rawCache[d].length!==n) days.add(d); }); }
+// Sorgt dafür, dass zu t genau dann eine Gegenbuchung existiert, wenn die Kategorie ein Gegenkonto hat
+function syncMirror(t,days){
+  if(!rawCache) return; const mid=mirrorId(t); const old=findTx(mid);
+  const k=cat(t.cat); const target=(t.src!=="mirror"&&k&&k.transfer&&k.mirrorAcc&&acc(k.mirrorAcc)&&k.mirrorAcc!==t.acc)?k.mirrorAcc:null;
+  if(old){ if(isFrozen(ym(old.date))) applyDelta(old,-1); removeTx(mid,days); }
+  if(!target) return;
+  const m={id:mid,acc:target,date:t.date,valuta:t.valuta||t.date,type:"Umbuchung",name:t.name,purpose:"Gegenbuchung "+(acc(t.acc)||{}).name,amount:-t.amount,cat:t.cat,src:"mirror",mirrorOf:t.id};
+  (rawCache[m.date]=rawCache[m.date]||[]).push(m); days.add(m.date); registerId(readIds(),m,"mirror"); flushIds(); if(isFrozen(ym(m.date))) applyDelta(m,1);
+}
+function dropMirror(t,days){ const old=findTx(mirrorId(t)); if(old){ if(isFrozen(ym(old.date))) applyDelta(old,-1); removeTx(old.id,days); delete readIds()[old.id]; flushIds(); } }
 /* ---------- Buchung bearbeiten / anlegen ---------- */
 let editTx=null;
 function openTx(t){
@@ -1071,16 +1135,18 @@ async function saveTx(){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(date)){ $("txErr").textContent="Datum fehlt."; return; }
   if(!(await ensureUnlocked())) return;
   const days=new Set();
+  if(editTx.src==="mirror"){ $("txErr").textContent="Gegenbuchungen folgen dem Original. Bitte die Originalbuchung ändern."; return; }
   if(editTx.id){ const old=allRaw().find(t=>t.id===editTx.id); if(old){ rawCache[old.date]=rawCache[old.date].filter(t=>t.id!==editTx.id); days.add(old.date); if(isFrozen(ym(old.date))) applyDelta(old,-1); } }
   const t={id:editTx.id||("m"+uid()),acc:$("txAcc").value,date:date,valuta:date,type:editTx.type||"Manuell",name:name,purpose:$("txPurpose").value.trim(),amount:Math.round(amount*100)/100,cat:editTx.cat,manual:editTx.manual||!!editTx.manual,src:editTx.src||"man"};
   if(!editTx.id) t.id=await txId(t);
-  (rawCache[date]=rawCache[date]||[]).push(t); days.add(date); if(isFrozen(ym(date))) applyDelta(t,1);
+  (rawCache[date]=rawCache[date]||[]).push(t); days.add(date); if(isFrozen(ym(date))) applyDelta(t,1); syncMirror(t,days);
   if($("txRule").classList.contains("on")){ const kw=$("txRuleKw").value.trim()||name.slice(0,40); await learnRule(t,t.cat,[],kw); }
   await saveDays([...days]); recomputeSums(); $("txOv").classList.remove("open"); renderAll(); toast("Gesichert");
 }
 async function deleteTx(){
   if(!editTx||!editTx.id||locked()) return; if(!confirm("Diese Buchung löschen? Die Monatssumme wird angepasst.")) return;
-  const old=allRaw().find(t=>t.id===editTx.id); if(old){ rawCache[old.date]=rawCache[old.date].filter(t=>t.id!==editTx.id); await saveDays([old.date]); if(isFrozen(ym(old.date))) applyDelta(old,-1); const ids=read(IDS,{}); delete ids[old.id]; write(IDS,ids); recomputeSums(); }
+  if(editTx.src==="mirror"){ toast("Gegenbuchung folgt dem Original"); return; }
+  const old=allRaw().find(t=>t.id===editTx.id); if(old){ const days=new Set([old.date]); rawCache[old.date]=rawCache[old.date].filter(t=>t.id!==editTx.id); if(isFrozen(ym(old.date))) applyDelta(old,-1); dropMirror(old,days); await saveDays([...days]); delete readIds()[old.id]; await flushIds(); recomputeSums(); }
   $("txOv").classList.remove("open"); renderAll();
 }
 
@@ -1090,6 +1156,7 @@ function renderOverview(){
   const m=viewMonth, t=monthTotals(m,viewAcc);
   const [y,mo]=m.split("-"); $("mTitle").innerHTML=esc(MONTHS[Number(mo)-1])+"<small>"+esc(y)+"</small>";
   $("accName").textContent=viewAcc?(acc(viewAcc)||{}).name||"":(cfg.accounts.length>1?"alle Konten":(cfg.accounts[0]||{}).name||"");
+  const chips=$("accChips"); if(cfg.accounts.length>1){ chips.style.display=""; chips.innerHTML='<button type="button" class="chip'+(viewAcc?'':' on')+'" data-a="">Alle Konten</button>'+cfg.accounts.map(x=>'<button type="button" class="chip'+(viewAcc===x.id?' on':'')+'" data-a="'+x.id+'">'+esc(x.name)+'</button>').join(""); chips.querySelectorAll("button").forEach(bt=>bt.addEventListener("click",()=>{ viewAcc=bt.dataset.a||null; renderAll(); })); } else { chips.style.display="none"; chips.innerHTML=""; }
   // Ring: Ausgaben nach Kategorie, gemessen am Gesamtbudget (oder Einnahmen, wenn kein Budget)
   const bud=budgetTotal(), ref=bud||t.inc||t.out||1;
   const cats=Object.keys(t.cats).map(c=>({id:c,v:(cat(c).income||cat(c).transfer)?0:(t.cats[c].out-t.cats[c].in)})).filter(x=>x.v>0).sort((a,b)=>b.v-a.v);
@@ -1100,7 +1167,7 @@ function renderOverview(){
   $("hero").innerHTML='<div class="ring"><svg viewBox="0 0 250 250"><circle r="'+R+'" cx="125" cy="125" fill="none" stroke="var(--track)" stroke-width="16"/>'+segs+'</svg>'+
     '<div class="center"><div class="amt '+(over?'neg':'')+'">'+esc(eur0(-t.out).replace("−",""))+'</div><div class="lbl">ausgegeben</div>'+
     (bud?'<div class="bud">'+(over?'über Budget, ':'')+pct+' % von '+esc(eur0(bud))+'</div>':(t.inc?'<div class="bud">'+Math.round(t.out/t.inc*100)+' % der Einnahmen</div>':''))+'</div></div>'+
-    '<div class="kpis"><div class="kpi"><b class="pos">'+esc(eur0(t.inc))+'</b><span>Einnahmen</span></div><div class="kpi"><b class="'+(t.net<0?'neg':'')+'">'+esc(eur0(t.net))+'</b><span>Übrig</span></div><div class="kpi"><b>'+esc(eur0(t.save))+'</b><span>Gespart</span></div></div>';
+    '<div class="kpis"><div class="kpi"><b class="pos">'+esc(eur0(t.inc))+'</b><span>Einnahmen</span></div><div class="kpi"><b class="'+(t.net<0?'neg':'')+'">'+esc(eur0(t.net))+'</b><span>Übrig</span></div><div class="kpi"><b>'+esc(eur0(Math.abs(t.save)))+'</b><span>'+(t.save<0?'Entnommen':'Gespart')+'</span></div></div>';
   // Kategorienliste
   const list=Object.keys(t.cats).map(c=>({c:cat(c),out:t.cats[c].out-t.cats[c].in,n:t.cats[c].n})).filter(x=>x.out>0&&!x.c.income&&!x.c.transfer).sort((a,b)=>b.out-a.out);
   $("catSub").textContent=list.length?list.length+" mit Ausgaben":"";
@@ -1187,7 +1254,7 @@ function renderTx(){
   if(!list.length){ $("txList").innerHTML='<div class="empty">'+(q||txFilterCat?'Nichts gefunden.':'Noch keine Buchungen. Der Import füllt diese Liste.')+'</div>'; return; }
   let html="", lastD=null, dsum=0, buf=[];
   const flush=()=>{ if(!buf.length) return; const d=new Date(lastD+"T12:00:00"); html+='<div class="daygroup"><div class="day"><span>'+DAYS[d.getDay()]+', '+d.toLocaleDateString("de-DE",{day:"numeric",month:"long"})+'</span><span>'+esc(eur(dsum,{plus:true}))+'</span></div>'+buf.join("")+'</div>'; buf=[]; dsum=0; };
-  list.forEach(t=>{ if(t.date!==lastD){ flush(); lastD=t.date; } dsum+=t.amount; buf.push('<div class="tx" data-id="'+esc(t.id)+'">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+'</div><div class="p">'+esc((t.purpose||t.type||"")+(cfg.accounts.length>1&&acc(t.acc)?" · "+acc(t.acc).name:""))+'</div></div><div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>'); });
+  list.forEach(t=>{ if(t.date!==lastD){ flush(); lastD=t.date; } dsum+=t.amount; buf.push('<div class="tx'+(t.src==="mirror"?' archrow':'')+'" data-id="'+esc(t.id)+'">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+(t.src==="mirror"?' <span class="faint" style="font-weight:400">· Gegenbuchung</span>':'')+'</div><div class="p">'+esc((t.purpose||t.type||"")+(cfg.accounts.length>1&&acc(t.acc)?" · "+acc(t.acc).name:""))+'</div></div><div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>'); });
   flush(); $("txList").innerHTML=html;
   $("txList").querySelectorAll(".tx").forEach(el=>el.addEventListener("click",()=>{ const t=allRaw().find(x=>x.id===el.dataset.id); if(t) openTx(t); }));
 }
@@ -1228,7 +1295,7 @@ function renderMore(){
   const ac=archiveConfigured(); $("archState").textContent=ac?"gesetzt":"nicht gesetzt";
   $("retHint").textContent=ac?"Einzelbuchungen bleiben "+cfg.retention+" Tage mit deinem Passwort sichtbar. Ältere wandern verschlüsselt ins Archiv, das nur das Archiv-Passwort öffnet. Monatssummen bleiben immer.":"Einzelbuchungen bleiben "+cfg.retention+" Tage, danach werden sie gelöscht. Mit einem Archiv-Passwort werden sie stattdessen verschlüsselt archiviert. Monatssummen bleiben immer.";
   $("catsCount").textContent=cfg.categories.length; $("rulesCount").textContent=cfg.rules.length+" eigene";
-  $("syncState").textContent=syncCfg&&syncCfg.token?"verbunden":"aus";
+  $("syncState").textContent=syncConfigured()?"verbunden":"aus";
   document.querySelectorAll("#themeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.t===(cfg.theme||"auto")));
   const store=read(TX,{}); const n=Object.keys(store).length; const na=Object.keys(read(ARCH,{})).length;
   $("verInfo").textContent="Riznica "+APP_VERSION+" · "+n+" Tage mit Buchungen verschlüsselt"+(na?" · "+na+" Tage im Archiv":"")+" · "+Object.keys(read(SUMS,{})).filter(k=>k!=="_frozen").length+" Monate mit Summen";
@@ -1236,30 +1303,40 @@ function renderMore(){
 let editAcc=null;
 function openAcc(a){
   editAcc=a?Object.assign({},a):{id:null,name:"",type:"giro",bank:"ing",start:null};
-  $("accTitle").textContent=a?"Konto":"Konto anlegen"; $("accN").value=editAcc.name; $("accT").value=editAcc.type; $("accB").value=editAcc.bank; $("accS").value=editAcc.start!=null?String(editAcc.start).replace(".",","):""; $("accDel").style.display=a?"":"none"; $("accErr").textContent="";
+  $("accTitle").textContent=a?"Konto":"Konto anlegen"; $("accN").value=editAcc.name; $("accT").value=editAcc.type; $("accB").value=editAcc.bank; $("accS").value=editAcc.start!=null?String(editAcc.start).replace(".",","):""; $("accI").value=editAcc.iban||""; $("accDel").style.display=a?"":"none"; $("accErr").textContent="";
   $("accOv").classList.add("open");
 }
 function saveAcc(){
   const n=$("accN").value.trim(); if(!n){ $("accErr").textContent="Name fehlt."; return; }
   const s=$("accS").value.trim(); const start=s?parseAmt(s):null; if(s&&!isFinite(start)){ $("accErr").textContent="Kontostand prüfen."; return; }
-  if(editAcc.id){ const a=acc(editAcc.id); a.name=n; a.type=$("accT").value; a.bank=$("accB").value; const changed=a.start!==start; a.start=start; if(changed){ const bal=read(BAL,{}); delete bal[a.id]; write(BAL,bal); if(!locked()) recomputeSums(); } }
-  else { const a={id:uid(),name:n,type:$("accT").value,bank:$("accB").value,start:start}; cfg.accounts.push(a); if(!cfg.primary) cfg.primary=a.id; }
+  const iban=$("accI").value.replace(/\s/g,"").slice(-4);
+  if(editAcc.id){ const a=acc(editAcc.id); a.name=n; a.type=$("accT").value; a.bank=$("accB").value; a.iban=iban||null; const oldStart=a.start; a.start=start;
+    if(oldStart!==start){ const bal=read(BAL,{}); const b=bal[a.id]||{}; const delta=(start||0)-(oldStart||0); Object.keys(b).forEach(k=>{ b[k]=Math.round((b[k]+delta)*100)/100; }); bal[a.id]=b; write(BAL,bal); if(!locked()) recomputeSums(); } }
+  else { const a={id:uid(),name:n,type:$("accT").value,bank:$("accB").value,start:start,iban:iban||null}; cfg.accounts.push(a); if(!cfg.primary) cfg.primary=a.id; }
   saveCfg(); $("accOv").classList.remove("open"); renderAll();
 }
-function deleteAcc(){
-  if(!editAcc.id) return; const store=read(TX,{}); const n=Object.keys(read(SUMS,{})).length;
-  if(!confirm("Konto „"+editAcc.name+"“ löschen? Die zugehörigen Summen bleiben in der Ablage, tauchen aber nicht mehr in der Übersicht auf.")) return;
-  cfg.accounts=cfg.accounts.filter(a=>a.id!==editAcc.id); if(cfg.primary===editAcc.id) cfg.primary=(cfg.accounts[0]||{}).id||null; saveCfg(); $("accOv").classList.remove("open"); renderAll();
+async function deleteAcc(){
+  if(!editAcc.id) return; const id=editAcc.id;
+  if(!confirm("Konto „"+editAcc.name+"“ löschen? Buchungen, Gegenbuchungen und Kontostände dieses Kontos werden entfernt, seine Monatssummen bleiben in der Ablage.")) return;
+  if(!locked()){ const days=new Set(); allRaw().filter(t=>t.acc===id).forEach(t=>{ if(isFrozen(ym(t.date))) applyDelta(t,-1); removeTx(t.id,days); }); if(days.size) await saveDays([...days]); }
+  const bal=read(BAL,{}); delete bal[id]; write(BAL,bal);
+  cfg.categories.forEach(c=>{ if(c.mirrorAcc===id) c.mirrorAcc=null; });
+  cfg.accounts=cfg.accounts.filter(a=>a.id!==id); if(cfg.primary===id) cfg.primary=(cfg.accounts[0]||{}).id||null; if(viewAcc===id) viewAcc=null; saveCfg(); if(!locked()) recomputeSums(); $("accOv").classList.remove("open"); renderAll();
 }
 /* Kategorien bearbeiten */
 let editCat=null;
 function renderCatEdit(){ $("catEdit").innerHTML=cfg.categories.map(c=>'<div class="catrow" data-c="'+c.id+'" style="cursor:pointer">'+catIcon(c)+'<div class="cat-body"><div class="name">'+esc(c.name)+'</div><div class="meta">'+(c.income?'Einnahme':c.transfer?'Umbuchung':c.fix?'Fixkosten':'variabel')+'</div></div><span class="faint">›</span></div>').join(""); $("catEdit").querySelectorAll(".catrow").forEach(r=>r.addEventListener("click",()=>openCat1(cat(r.dataset.c)))); }
-function openCat1(c){ editCat=c?Object.assign({},c):{id:null,icon:"◽",name:"",color:"#8A91A5"}; $("c1Icon").value=editCat.icon; $("c1Name").value=editCat.name; $("c1Color").value=editCat.color; $("c1Fix").classList.toggle("on",!!editCat.fix); $("c1In").classList.toggle("on",!!editCat.income); $("c1Tr").classList.toggle("on",!!editCat.transfer); $("c1Del").style.display=c?"":"none"; $("c1Err").textContent=""; $("cat1Ov").classList.add("open"); }
-function saveCat1(){
+function openCat1(c){ editCat=c?Object.assign({},c):{id:null,icon:"◽",name:"",color:"#8A91A5"}; $("c1Icon").value=editCat.icon; $("c1Name").value=editCat.name; $("c1Color").value=editCat.color; $("c1Fix").classList.toggle("on",!!editCat.fix); $("c1In").classList.toggle("on",!!editCat.income); $("c1Tr").classList.toggle("on",!!editCat.transfer); $("c1Del").style.display=c?"":"none"; $("c1Err").textContent="";
+  $("c1Mirror").innerHTML='<option value="">kein Gegenkonto</option>'+cfg.accounts.map(a=>'<option value="'+a.id+'"'+(a.id===editCat.mirrorAcc?' selected':'')+'>'+esc(a.name)+'</option>').join(""); updateMirrorRow(); $("cat1Ov").classList.add("open"); }
+function updateMirrorRow(){ $("c1MirrorWrap").style.display=$("c1Tr").classList.contains("on")?"":"none"; }
+async function saveCat1(){
   const n=$("c1Name").value.trim(); if(!n){ $("c1Err").textContent="Name fehlt."; return; }
-  const o={icon:$("c1Icon").value.trim()||"◽",name:n,color:$("c1Color").value,fix:$("c1Fix").classList.contains("on"),income:$("c1In").classList.contains("on"),transfer:$("c1Tr").classList.contains("on")};
-  if(editCat.id){ Object.assign(cat(editCat.id),o); } else { o.id="k"+uid(); cfg.categories.splice(cfg.categories.length-1,0,o); }
-  saveCfg(); $("cat1Ov").classList.remove("open"); renderCatEdit(); renderAll();
+  const o={icon:$("c1Icon").value.trim()||"◽",name:n,color:$("c1Color").value,fix:$("c1Fix").classList.contains("on"),income:$("c1In").classList.contains("on"),transfer:$("c1Tr").classList.contains("on"),mirrorAcc:($("c1Tr").classList.contains("on")&&$("c1Mirror").value)||null};
+  let id=editCat.id; if(id){ Object.assign(cat(id),o); } else { o.id=id="k"+uid(); cfg.categories.splice(cfg.categories.length-1,0,o); }
+  saveCfg(); $("cat1Ov").classList.remove("open"); renderCatEdit();
+  // Gegenbuchungen für alle vorhandenen Buchungen dieser Kategorie nachziehen
+  if(!locked()){ const days=new Set(); allRaw().filter(t=>t.cat===id&&t.src!=="mirror").forEach(t=>syncMirror(t,days)); if(days.size){ await saveDays([...days]); recomputeSums(); } }
+  renderAll();
 }
 async function deleteCat1(){
   if(!editCat.id||editCat.id==="sonstiges") { $("c1Err").textContent="Sonstiges bleibt als Auffangbecken."; return; }
@@ -1274,11 +1351,18 @@ function renderRules(){ $("ruleCat").innerHTML=cfg.categories.map(k=>'<option va
 /* ---------- Abgleich (verschlüsselt, privater Gist), nur wenn entsperrt ---------- */
 const GH_API="https://api.github.com", GIST_DESC="riznica-sync", GIST_FILE="riznica.json";
 let syncCfg=read(SYNC,null), syncTimer=null, syncBusy=false, lastPushed="";
+// Das Token liegt verschlüsselt (mit dem Hauptschlüssel) auf der Platte und nur entsperrt im Speicher
+function saveSyncCfg(){ if(!syncCfg) { localStorage.removeItem(SYNC); return; } const o=Object.assign({},syncCfg); delete o.token; localStorage.setItem(SYNC,JSON.stringify(o)); }
+async function storeToken(tok){ if(!sessKey) return false; syncCfg=syncCfg||{}; syncCfg.token=tok; syncCfg.tokEnc=await encKey(sessKey,tok); saveSyncCfg(); return true; }
+async function loadToken(){ if(!syncCfg||!sessKey) return; if(syncCfg.tokEnc&&!syncCfg.token){ try{ syncCfg.token=await decKey(sessKey,syncCfg.tokEnc); }catch(e){ syncCfg.token=null; } } }
+function syncConfigured(){ return !!(syncCfg&&(syncCfg.tokEnc||syncCfg.token)); }
 function syncOn(){ return !!(syncCfg&&syncCfg.token)&&!locked()&&!!sessPw; }
+// Altbestand: Token im Klartext → beim ersten Entsperren verschlüsseln
+(function(){ if(syncCfg&&syncCfg.token&&!syncCfg.tokEnc){ syncCfg.legacyToken=syncCfg.token; } })();
 function ghHead(extra){ return Object.assign({Authorization:"Bearer "+syncCfg.token,Accept:"application/vnd.github+json"},extra||{}); }
 function setSyncStatus(t){ const el=$("syncLabel"); if(el) el.textContent=t; }
 function collectSync(){ const d={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("rz_")===0&&LOCAL_ONLY.indexOf(k)<0) d[k]=localStorage.getItem(k); } return d; }
-function dataWeight(store){ let n=0; try{ n+=Object.keys(JSON.parse((store?store[TX]:localStorage.getItem(TX))||"{}")).length*3; }catch(e){} try{ n+=Object.keys(JSON.parse((store?store[SUMS]:localStorage.getItem(SUMS))||"{}")).length*5; }catch(e){} try{ n+=Object.keys(JSON.parse((store?store[IDS]:localStorage.getItem(IDS))||"{}")).length; }catch(e){} return n; }
+function dataWeight(store){ let n=0; try{ n+=Object.keys(JSON.parse((store?store[TX]:localStorage.getItem(TX))||"{}")).length*3; }catch(e){} try{ n+=Object.keys(JSON.parse((store?store[SUMS]:localStorage.getItem(SUMS))||"{}")).length*5; }catch(e){} try{ n+=Object.keys(JSON.parse((store?store[ARCH]:localStorage.getItem(ARCH))||"{}")).length; }catch(e){} return n; }
 function scheduleSync(k){ if(!syncOn()) return; if(k&&LOCAL_ONLY.indexOf(k)>=0) return; clearTimeout(syncTimer); syncTimer=setTimeout(()=>syncPush(false),2500); }
 async function findGist(){ try{ const r=await fetch(GH_API+"/gists?per_page=100",{headers:ghHead(),cache:"no-store"}); if(!r.ok) return {ok:false,status:r.status}; const l=await r.json(); const g=(l||[]).find(x=>x.description===GIST_DESC||(x.files&&x.files[GIST_FILE])); return {ok:true,id:g?g.id:null}; }catch(e){ return {ok:false,net:true}; } }
 async function syncPush(force){
@@ -1286,7 +1370,7 @@ async function syncPush(force){
   const plain=JSON.stringify(collectSync()); if(!force&&plain===lastPushed) return "same";
   syncBusy=true; setSyncStatus("sichert …");
   try{
-    let salt; if(syncCfg.salt) salt=unb64(syncCfg.salt); else { salt=window.crypto.getRandomValues(new Uint8Array(16)); syncCfg.salt=b64(salt); localStorage.setItem(SYNC,JSON.stringify(syncCfg)); }
+    let salt; if(syncCfg.salt) salt=unb64(syncCfg.salt); else { salt=window.crypto.getRandomValues(new Uint8Array(16)); syncCfg.salt=b64(salt); saveSyncCfg(); }
     const key=await deriveKey(sessPw,salt,KDF_IT); const enc=await encKey(key,plain);
     const body={v:1,updatedAt:new Date().toISOString(),salt:b64(salt),iv:enc.iv,ct:enc.ct,it:KDF_IT};
     const payload={description:GIST_DESC,files:{}}; payload.files[GIST_FILE]={content:JSON.stringify(body)};
@@ -1294,15 +1378,15 @@ async function syncPush(force){
     const r=await fetch(url,{method:method,headers:ghHead({"Content-Type":"application/json"}),body:JSON.stringify(payload)});
     if(!r.ok){ setSyncStatus(r.status===401||r.status===403?"Token prüfen":"Fehler "+r.status); syncBusy=false; return "error"; }
     try{ const j=await r.json(); if(j&&j.id){ syncCfg.gist=j.id; } }catch(e){}
-    syncCfg.lastAppliedAt=body.updatedAt; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); lastPushed=plain; setSyncStatus("aktuell"); syncBusy=false; return "ok";
+    syncCfg.lastAppliedAt=body.updatedAt; saveSyncCfg(); lastPushed=plain; setSyncStatus("aktuell"); syncBusy=false; return "ok";
   }catch(e){ setSyncStatus("offline"); syncBusy=false; return "offline"; }
 }
 async function syncPull(){
   if(!syncOn()||syncBusy) return "busy"; syncBusy=true; setSyncStatus("prüft …");
   try{
-    if(!syncCfg.gist){ const f=await findGist(); if(!f.ok){ syncBusy=false; setSyncStatus(f.net?"offline":"Token prüfen"); return f.net?"offline":"badid"; } if(!f.id){ syncBusy=false; setSyncStatus("leer"); return "empty"; } syncCfg.gist=f.id; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); }
+    if(!syncCfg.gist){ const f=await findGist(); if(!f.ok){ syncBusy=false; setSyncStatus(f.net?"offline":"Token prüfen"); return f.net?"offline":"badid"; } if(!f.id){ syncBusy=false; setSyncStatus("leer"); return "empty"; } syncCfg.gist=f.id; saveSyncCfg(); }
     const r=await fetch(GH_API+"/gists/"+syncCfg.gist,{headers:ghHead(),cache:"no-store"});
-    if(r.status===404){ syncCfg.gist=""; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); syncBusy=false; setSyncStatus("leer"); return "empty"; }
+    if(r.status===404){ syncCfg.gist=""; saveSyncCfg(); syncBusy=false; setSyncStatus("leer"); return "empty"; }
     if(r.status===401||r.status===403){ syncBusy=false; setSyncStatus("Token prüfen"); return "badid"; }
     if(!r.ok) throw new Error("HTTP "+r.status);
     const j=await r.json(); const file=j.files&&j.files[GIST_FILE]; if(!file){ syncBusy=false; setSyncStatus("leer"); return "empty"; }
@@ -1313,14 +1397,15 @@ async function syncPull(){
     const mine=dataWeight(null), theirs=dataWeight(data);
     if(mine>5&&theirs*3<mine){ syncBusy=false; if(!confirm("Der abgeglichene Stand enthält deutlich weniger Daten als dieses Gerät.\n\nHier: "+mine+" · Abgleich: "+theirs+"\n\nÜbernehmen und lokale Daten ersetzen?\n(Abbrechen = dieses Gerät hochladen)")){ await syncPush(true); return "pushed"; } syncBusy=true; }
     const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("rz_")===0&&LOCAL_ONLY.indexOf(k)<0) del.push(k); } del.forEach(k=>localStorage.removeItem(k)); Object.keys(data).forEach(k=>localStorage.setItem(k,data[k]));
-    syncCfg.lastAppliedAt=body.updatedAt; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); lastPushed=JSON.stringify(collectSync());
+    syncCfg.lastAppliedAt=body.updatedAt; saveSyncCfg(); lastPushed=JSON.stringify(collectSync());
     // Neu laden: andere Konfiguration, evtl. anderes Salz. Das Passwort ist dasselbe.
-    cfg=read(CFG,cfg); if(migrateCfg()) localStorage.setItem(CFG,JSON.stringify(cfg)); cryptoCfg=read(CRYPTO,null); const pw=sessPw; sessKey=null; const ok=await unlockWith(pw);
+    const tok=syncCfg.token; cfg=read(CFG,cfg); if(migrateCfg()) localStorage.setItem(CFG,JSON.stringify(cfg)); cryptoCfg=read(CRYPTO,null); const pw=sessPw; sessKey=null; const ok=await unlockWith(pw);
     if(!ok){ setSyncStatus("Passwort weicht ab"); syncBusy=false; renderLock(); renderAll(); return "badpw"; }
+    await storeToken(tok);   // neuer Schlüssel (anderes Salz), Token neu verpacken
     recomputeSums(); await pruneOld(); setSyncStatus("aktualisiert"); syncBusy=false; renderAll(); return "applied";
   }catch(e){ const bad=e&&(e.name==="OperationError"||e.name==="InvalidAccessError"); setSyncStatus(bad?"Passwort weicht ab":"offline"); syncBusy=false; return bad?"badpw":"offline"; }
 }
-async function syncNow(){ if(!syncCfg||!syncCfg.token){ toast("Erst Abgleich einrichten"); return; } if(!(await ensureUnlocked("Der Abgleich verschlüsselt mit deinem Passwort."))) return; const r=await syncPull(); if(r==="empty"||r==="uptodate") await syncPush(r==="empty"); renderMore(); }
+async function syncNow(){ if(!syncConfigured()){ toast("Erst Abgleich einrichten"); return; } if(!(await ensureUnlocked("Der Abgleich verschlüsselt mit deinem Passwort."))) return; await loadToken(); if(!syncCfg.token){ toast("Token nicht lesbar, bitte neu eintragen"); return; } const r=await syncPull(); if(r==="empty"||r==="uptodate") await syncPush(r==="empty"); renderMore(); }
 
 /* ---------- Sicherung in Datei ---------- */
 function backupOut(){
@@ -1347,7 +1432,7 @@ async function changePassword(){
   const salt=window.crypto.getRandomValues(new Uint8Array(16)); const key=await deriveKey(np,salt,KDF_IT);
   cryptoCfg={salt:b64(salt),check:await encKey(key,"riznica"),it:KDF_IT}; write(CRYPTO,cryptoCfg);
   await rewrapArchiveForMain(oldKey,key);
-  sessKey=key; sessPw=np; await saveDays(Object.keys(rawCache)); if(syncCfg) { delete syncCfg.salt; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); }
+  sessKey=key; sessPw=np; await saveDays(Object.keys(rawCache)); await flushIds(); if(syncCfg){ delete syncCfg.salt; if(syncCfg.token) await storeToken(syncCfg.token); else saveSyncCfg(); }
   toast("Passwort geändert"); renderMore(); syncPush(true);
 }
 
@@ -1375,11 +1460,13 @@ function wire(){
   document.querySelectorAll("#tabs button").forEach(b=>b.addEventListener("click",()=>{ if(b.dataset.tab!=="buchungen") txFilterCat=null; showTab(b.dataset.tab); }));
   $("mPrev").addEventListener("click",()=>{ viewMonth=addMonths(viewMonth,-1); txFilterCat=null; write(UI,{tab:tab,month:viewMonth}); renderAll(); });
   $("mNext").addEventListener("click",()=>{ viewMonth=addMonths(viewMonth,1); txFilterCat=null; write(UI,{tab:tab,month:viewMonth}); renderAll(); });
-  $("mTitle").addEventListener("click",()=>{ if(cfg.accounts.length<2) return; const i=cfg.accounts.findIndex(a=>a.id===viewAcc); viewAcc=i<0?cfg.accounts[0].id:(i+1<cfg.accounts.length?cfg.accounts[i+1].id:null); renderAll(); toast(viewAcc?acc(viewAcc).name:"Alle Konten"); });
+
   document.querySelectorAll("#chartSeg button").forEach(b=>b.addEventListener("click",()=>{ chartMode=b.dataset.c; document.querySelectorAll("#chartSeg button").forEach(x=>x.classList.toggle("on",x===b)); renderChart(); }));
-  const afterUnlock=async()=>{ if(syncCfg&&syncCfg.token) await syncPull(); const n=await pruneOld(); if(n&&archiveConfigured()) toast(n+" Tage ins Archiv verschoben"); renderAll(); };
+  const afterUnlock=async()=>{ if(syncOn()) await syncPull(); const n=await pruneOld(); if(n&&archiveConfigured()) toast(n+" Tage ins Archiv verschoben"); renderAll(); };
   $("lockBtn").addEventListener("click",async()=>{ if(locked()){ if(await ensureUnlocked()) afterUnlock(); } else { lock(); toast("Verschlossen"); } });
   $("txUnlock").addEventListener("click",async()=>{ if(await ensureUnlocked()) afterUnlock(); });
+  // Import-Freigabe und Auto-Aktionen nach jedem Entsperren, egal von wo es kam
+  window.__onUnlock=async()=>{ if(syncCfg&&syncCfg.legacyToken){ await storeToken(syncCfg.legacyToken); delete syncCfg.legacyToken; } await loadToken(); };
   $("pwOk").addEventListener("click",()=>{ if(pwResolve) pwSubmit(); });
   $("pw1").addEventListener("keydown",e=>{ if(e.key==="Enter"){ if($("pw2Wrap").style.display==="none"){ if(pwResolve) pwSubmit(); else $("pwOk").click(); } else $("pw2").focus(); } });
   $("pw2").addEventListener("keydown",e=>{ if(e.key==="Enter") $("pwOk").click(); });
@@ -1408,17 +1495,18 @@ function wire(){
   $("archItem").addEventListener("click",setupArchivePw);
   $("autoLock").addEventListener("change",()=>{ cfg.autoLock=Number($("autoLock").value); saveCfg(); touchLock(); });
   // Sync
-  $("syncItem").addEventListener("click",()=>{ $("syncTok").value=(syncCfg&&syncCfg.token)||""; $("syncErr").textContent=""; $("syncOff").style.display=(syncCfg&&syncCfg.token)?"":"none"; $("syncOv").classList.add("open"); });
+  $("syncItem").addEventListener("click",()=>{ $("syncTok").value=""; $("syncTok").placeholder=syncConfigured()?"Token ist hinterlegt, zum Ersetzen neu eintragen":"ghp_…"; $("syncErr").textContent=""; $("syncOff").style.display=syncConfigured()?"":"none"; $("syncOv").classList.add("open"); });
   $("syncCancel").addEventListener("click",()=>$("syncOv").classList.remove("open"));
   $("syncOff").addEventListener("click",()=>{ syncCfg=null; localStorage.removeItem(SYNC); $("syncOv").classList.remove("open"); setSyncStatus(""); renderMore(); });
   $("syncSave").addEventListener("click",async()=>{ const t=$("syncTok").value.trim(); if(!t){ $("syncErr").textContent="Token fehlt."; return; } $("syncErr").textContent="prüft …"; try{ const r=await fetch(GH_API+"/gists?per_page=1",{headers:{Authorization:"Bearer "+t,Accept:"application/vnd.github+json"},cache:"no-store"}); if(!r.ok){ $("syncErr").textContent="Token wird abgelehnt ("+r.status+")."; return; } }catch(e){ $("syncErr").textContent="Keine Verbindung."; return; }
-    syncCfg=Object.assign({},syncCfg||{},{token:t,gist:"",lastAppliedAt:""}); delete syncCfg.salt; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); $("syncOv").classList.remove("open"); renderMore(); syncNow(); });
+    if(!(await ensureUnlocked("Das Token wird mit deinem Passwort verschlüsselt abgelegt."))) return;
+    syncCfg=Object.assign({},syncCfg||{},{gist:"",lastAppliedAt:""}); delete syncCfg.salt; delete syncCfg.legacyToken; await storeToken(t); $("syncOv").classList.remove("open"); renderMore(); syncNow(); });
   $("syncNowItem").addEventListener("click",syncNow);
   // Kategorien & Regeln
   $("catsItem").addEventListener("click",()=>{ renderCatEdit(); $("catOv").classList.add("open"); });
   $("catClose").addEventListener("click",()=>$("catOv").classList.remove("open")); $("catAdd").addEventListener("click",()=>openCat1(null));
   $("c1Save").addEventListener("click",saveCat1); $("c1Cancel").addEventListener("click",()=>$("cat1Ov").classList.remove("open")); $("c1Del").addEventListener("click",deleteCat1);
-  ["c1Fix","c1In","c1Tr"].forEach(id=>$(id).addEventListener("click",()=>{ $(id).classList.toggle("on"); if(id!=="c1Fix"&&$(id).classList.contains("on")){ ["c1Fix","c1In","c1Tr"].filter(x=>x!==id).forEach(x=>$(x).classList.remove("on")); } }));
+  ["c1Fix","c1In","c1Tr"].forEach(id=>$(id).addEventListener("click",()=>{ $(id).classList.toggle("on"); if(id!=="c1Fix"&&$(id).classList.contains("on")){ ["c1Fix","c1In","c1Tr"].filter(x=>x!==id).forEach(x=>$(x).classList.remove("on")); } updateMirrorRow(); }));
   $("rulesItem").addEventListener("click",()=>{ renderRules(); $("ruleHint").textContent=""; $("ruleOv").classList.add("open"); }); $("ruleClose").addEventListener("click",()=>$("ruleOv").classList.remove("open"));
   $("ruleAdd").addEventListener("click",()=>{ if(!$("ruleKw").value.trim()) return; const mn=parseAmt($("ruleMin").value), mx=parseAmt($("ruleMax").value); const opt={dir:$("ruleDir").value,field:$("ruleField").value}; if(isFinite(mn)) opt.min=mn; if(isFinite(mx)) opt.max=mx; if($("ruleKw2").value.trim()) opt.kw2=$("ruleKw2").value.trim(); addRule($("ruleKw").value,$("ruleCat").value,opt); ["ruleKw","ruleMin","ruleMax","ruleKw2"].forEach(id=>$(id).value=""); renderRules();
     // Vorschau nach der neuen Regel neu einordnen, aber nur, was du nicht selbst gesetzt hast
