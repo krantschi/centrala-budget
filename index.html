@@ -614,7 +614,7 @@ function parseINGCsv(text){
 <script>
 (function(){
 "use strict";
-const APP_VERSION="2026-09-24-4";
+const APP_VERSION="2026-09-24-5";
 /* ---------- Ablage ---------- */
 const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1", ARCH="rz_archive_v1", ARCHK="rz_archive_key_v1";
 const LOCAL_ONLY=[SYNC, UI];                    // bleibt strikt auf dem Gerät
@@ -684,8 +684,9 @@ const BUILTIN_RULES=[
 let cfg=read(CFG,null);
 if(!cfg){ cfg={v:1, accounts:[], categories:DEFAULT_CATS.map(c=>Object.assign({},c)), rules:[], budgets:{}, retention:365, autoLock:15, theme:"auto", primary:null}; }
 if(!cfg.categories||!cfg.categories.length) cfg.categories=DEFAULT_CATS.map(c=>Object.assign({},c));
-// Nachträglich hinzugekommene Grundkategorien ergänzen, vor Sonstiges
-DEFAULT_CATS.forEach((c,i)=>{ if(!cfg.categories.some(x=>x.id===c.id)){ const s=cfg.categories.findIndex(x=>x.id==="sonstiges"); cfg.categories.splice(s<0?cfg.categories.length:s,0,Object.assign({},c)); } });
+// Nachträglich hinzugekommene Grundkategorien ergänzen, vor Sonstiges (auch nach einem Abgleich)
+function migrateCfg(){ let changed=false; DEFAULT_CATS.forEach(c=>{ if(!cfg.categories.some(x=>x.id===c.id)){ const s=cfg.categories.findIndex(x=>x.id==="sonstiges"); cfg.categories.splice(s<0?cfg.categories.length:s,0,Object.assign({},c)); changed=true; } }); return changed; }
+migrateCfg();
 cfg.rules=cfg.rules||[]; cfg.budgets=cfg.budgets||{}; cfg.accounts=cfg.accounts||[];
 if(!cfg.retention) cfg.retention=365; if(cfg.autoLock==null) cfg.autoLock=15;
 function saveCfg(){ write(CFG,cfg); }
@@ -1204,7 +1205,7 @@ async function syncPull(){
     const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("rz_")===0&&LOCAL_ONLY.indexOf(k)<0) del.push(k); } del.forEach(k=>localStorage.removeItem(k)); Object.keys(data).forEach(k=>localStorage.setItem(k,data[k]));
     syncCfg.lastAppliedAt=body.updatedAt; localStorage.setItem(SYNC,JSON.stringify(syncCfg)); lastPushed=JSON.stringify(collectSync());
     // Neu laden: andere Konfiguration, evtl. anderes Salz. Das Passwort ist dasselbe.
-    cfg=read(CFG,cfg); cryptoCfg=read(CRYPTO,null); const pw=sessPw; sessKey=null; const ok=await unlockWith(pw);
+    cfg=read(CFG,cfg); if(migrateCfg()) localStorage.setItem(CFG,JSON.stringify(cfg)); cryptoCfg=read(CRYPTO,null); const pw=sessPw; sessKey=null; const ok=await unlockWith(pw);
     if(!ok){ setSyncStatus("Passwort weicht ab"); syncBusy=false; renderLock(); renderAll(); return "badpw"; }
     recomputeSums(); await pruneOld(); setSyncStatus("aktualisiert"); syncBusy=false; renderAll(); return "applied";
   }catch(e){ const bad=e&&(e.name==="OperationError"||e.name==="InvalidAccessError"); setSyncStatus(bad?"Passwort weicht ab":"offline"); syncBusy=false; return bad?"badpw":"offline"; }
