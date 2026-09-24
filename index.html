@@ -213,6 +213,14 @@
   .tx.dup{opacity:.45}
   .tx.dup .n:after{content:" · schon da"; color:var(--ink-faint); font-weight:400}
   .archrow{opacity:.85}
+  .rcopt{display:flex; align-items:flex-start; gap:10px; padding:10px 12px; border-radius:12px; background:var(--raised); border:1.5px solid transparent; cursor:pointer; text-align:left; width:100%}
+  .rcopt.on{border-color:var(--ink)}
+  .rcopt .dot{width:16px; height:16px; border-radius:50%; border:1.5px solid var(--hair); flex:none; margin-top:2px}
+  .rcopt.on .dot{background:var(--ink); border-color:var(--ink); box-shadow:inset 0 0 0 3px var(--card)}
+  .rcopt b{display:block; font-weight:500; font-size:14px}
+  .rcopt span{font-size:12.5px; color:var(--ink-soft)}
+  .rcopt input{margin-top:6px; padding:7px 10px; font-size:13px}
+  .rcopt .row input{width:auto; flex:1}
 
   /* ---------- Budget ---------- */
   .budrow{display:flex; align-items:center; gap:11px; padding:9px 0; border-bottom:1px solid var(--line)}
@@ -401,7 +409,8 @@
   <div class="row"><div style="flex:1"><label>Datum</label><input id="txDate" type="date"></div><div style="flex:1"><label>Betrag in €</label><input id="txAmount" inputmode="decimal" placeholder="-12,50"></div></div>
   <label>Konto</label><select id="txAcc"></select>
   <label>Kategorie</label><div class="catpick" id="txCats"></div>
-  <div class="row" style="margin-top:12px"><label style="margin:0">Regel merken: gleiche Bezeichnung immer so einordnen</label><button class="sw" type="button" id="txRule" aria-label="Regel merken"></button></div>
+  <div class="row" style="margin-top:12px"><label style="margin:0">Regel merken für künftige Buchungen</label><button class="sw" type="button" id="txRule" aria-label="Regel merken"></button></div>
+  <div id="txRuleWrap" style="display:none"><label>Stichwort (aus Empfänger oder Verwendungszweck)</label><input id="txRuleKw"><div class="hint">Gilt nur für dieselbe Richtung, also Ausgaben oder Gutschriften getrennt.</div></div>
   <div class="err" id="txErr"></div>
   <div class="actions"><button class="btn danger" type="button" id="txDel" style="flex:0 0 auto">Löschen</button><button class="btn" type="button" id="txCancel">Abbrechen</button><button class="btn primary" type="button" id="txSave">Sichern</button></div>
 </div></div>
@@ -439,10 +448,23 @@
 <!-- Regeln -->
 <div class="ov" id="ruleOv"><div class="sheet"><div class="grabber"></div>
   <h3>Regeln</h3>
-  <p class="muted small">Enthält die Bezeichnung oder der Zweck das Stichwort, bekommt die Buchung die Kategorie. Eigene Regeln stehen über den eingebauten.</p>
-  <div class="row" style="margin-top:10px; gap:6px"><input id="ruleKw" placeholder="Stichwort" style="flex:1"><select id="ruleCat" style="flex:1"></select><button class="btn" type="button" id="ruleAdd">+</button></div>
+  <p class="muted small">Trifft das Stichwort, bekommt die Buchung die Kategorie. Eigene Regeln stehen über den eingebauten, die neueste zuerst.</p>
+  <div class="stack" style="margin-top:10px">
+    <input id="ruleKw" placeholder="Stichwort, z.B. Spotify">
+    <div class="row" style="gap:6px"><select id="ruleField" style="flex:1"><option value="any">überall</option><option value="name">im Empfänger</option><option value="purpose">im Verwendungszweck</option></select><select id="ruleDir" style="flex:1"><option value="any">Ausgaben und Gutschriften</option><option value="out">nur Ausgaben</option><option value="in">nur Gutschriften</option></select></div>
+    <div class="row" style="gap:6px"><input id="ruleMin" inputmode="decimal" placeholder="Betrag von €" style="flex:1"><input id="ruleMax" inputmode="decimal" placeholder="bis €" style="flex:1"><input id="ruleKw2" placeholder="und Zweck enthält …" style="flex:2"></div>
+    <div class="row" style="gap:6px"><select id="ruleCat" style="flex:1"></select><button class="btn primary" type="button" id="ruleAdd">Regel anlegen</button></div>
+  </div>
   <div id="ruleList" style="margin-top:10px"></div>
   <div class="actions"><button class="btn primary" type="button" id="ruleClose">Fertig</button></div>
+</div></div>
+
+<!-- Regel-Konflikt -->
+<div class="ov" id="rcOv"><div class="sheet"><div class="grabber"></div>
+  <h3>Wann soll das gelten?</h3>
+  <p class="muted small" id="rcText"></p>
+  <div class="stack" id="rcOpts" style="margin-top:10px"></div>
+  <div class="actions"><button class="btn" type="button" id="rcCancel">Nur diese Buchung</button><button class="btn primary" type="button" id="rcOk">Übernehmen</button></div>
 </div></div>
 
 <!-- Sync -->
@@ -614,7 +636,7 @@ function parseINGCsv(text){
 <script>
 (function(){
 "use strict";
-const APP_VERSION="2026-09-24-5";
+const APP_VERSION="2026-09-24-7";
 /* ---------- Ablage ---------- */
 const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1", ARCH="rz_archive_v1", ARCHK="rz_archive_key_v1";
 const LOCAL_ONLY=[SYNC, UI];                    // bleibt strikt auf dem Gerät
@@ -694,15 +716,34 @@ function cat(id){ return cfg.categories.find(c=>c.id===id)||cfg.categories.find(
 function acc(id){ return cfg.accounts.find(a=>a.id===id); }
 function tint(hex){ return hex+"26"; }   // 15% Alpha
 function catIcon(c,extra){ c=typeof c==="string"?cat(c):c; return '<span class="cicon '+(extra||"")+'" style="--c-tint:'+tint(c.color)+'">'+esc(c.icon)+'</span>'; }
+/* Regeln: {kw, cat, dir:"any"|"out"|"in", field:"any"|"name"|"purpose", min, max, kw2}
+   Eigene vor eingebauten, speziellere zuerst, bei gleicher Tiefe die neueste. */
+function ruleSpec(r){ return ((r.dir||"any")!=="any"?1:0)+((r.field||"any")!=="any"?1:0)+(r.min!=null||r.max!=null?1:0)+(r.kw2?1:0); }
+function ruleMatches(r,name,purpose,type,amount){
+  if(!r.kw) return false;
+  if(r.dir==="out"&&amount>0) return false; if(r.dir==="in"&&amount<0) return false;
+  const f=r.field||"any"; const hay=(f==="name"?(name||""):f==="purpose"?(purpose||""):((name||"")+" "+(purpose||"")+" "+(type||""))).toLowerCase();
+  if(hay.indexOf(r.kw.toLowerCase())<0) return false;
+  const ab=Math.abs(amount); if(r.min!=null&&ab<r.min) return false; if(r.max!=null&&ab>r.max) return false;
+  if(r.kw2 && ((name||"")+" "+(purpose||"")).toLowerCase().indexOf(r.kw2.toLowerCase())<0) return false;
+  return true;
+}
+function ownRules(){ return cfg.rules.map((r,i)=>({r:r,i:i})).sort((x,y)=>ruleSpec(y.r)-ruleSpec(x.r)||x.i-y.i).map(x=>x.r); }
 function classify(name,purpose,type,amount){
+  for(const r of ownRules()){ if(ruleMatches(r,name,purpose,type,amount) && cat(r.cat)) return r.cat; }
   const hay=((name||"")+" "+(purpose||"")+" "+(type||"")).toLowerCase();
-  for(const r of cfg.rules){ if(r.kw && hay.indexOf(r.kw.toLowerCase())>=0 && cat(r.cat)) return r.cat; }
   for(const [kw,c] of BUILTIN_RULES){ if(hay.indexOf(kw)>=0 && cfg.categories.some(x=>x.id===c)) return c; }
   if(amount>0) return cfg.categories.some(x=>x.id==="einkommen")?"einkommen":"sonstiges";
   return "sonstiges";
 }
-function addRule(kw,catId){ kw=(kw||"").trim(); if(!kw) return; cfg.rules=cfg.rules.filter(r=>r.kw.toLowerCase()!==kw.toLowerCase()); cfg.rules.unshift({kw:kw,cat:catId}); saveCfg(); }
-
+function sameRule(a,b){ return a.kw.toLowerCase()===b.kw.toLowerCase()&&(a.dir||"any")===(b.dir||"any")&&(a.field||"any")===(b.field||"any")&&(a.min==null?null:a.min)===(b.min==null?null:b.min)&&(a.max==null?null:a.max)===(b.max==null?null:b.max)&&(a.kw2||"").toLowerCase()===(b.kw2||"").toLowerCase(); }
+function addRule(kw,catId,opt){
+  kw=(kw||"").trim(); if(!kw) return; opt=opt||{};
+  const r={kw:kw,cat:catId,dir:opt.dir||"any",field:opt.field||"any"}; if(opt.min!=null) r.min=opt.min; if(opt.max!=null) r.max=opt.max; if(opt.kw2) r.kw2=opt.kw2;
+  cfg.rules=cfg.rules.filter(x=>!sameRule(x,r)); cfg.rules.unshift(r); saveCfg(); return r;
+}
+function dirOf(amount){ return amount<0?"out":"in"; }
+function ruleText(r){ const p=[]; p.push({any:"überall",name:"im Empfänger",purpose:"im Zweck"}[r.field||"any"]); p.push({any:"beide Richtungen",out:"nur Ausgaben",in:"nur Gutschriften"}[r.dir||"any"]); if(r.min!=null&&r.max!=null) p.push(eur0(r.min)+" bis "+eur0(r.max)); else if(r.min!=null) p.push("ab "+eur0(r.min)); else if(r.max!=null) p.push("bis "+eur0(r.max)); if(r.kw2) p.push("Zweck „"+r.kw2+"“"); return p.join(" · "); }
 /* ---------- Verschlüsselung (AES-GCM, PBKDF2) wie bei Centrala ---------- */
 const subtle=()=>(window.crypto&&window.crypto.subtle)?window.crypto.subtle:null;
 function b64(buf){ let s=""; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
@@ -919,13 +960,50 @@ function renderPreview(){
   el.innerHTML=pending.tx.map((t,i)=>{ const d=t.date.split("-").reverse().join("."); const meta=[d, t.type, t.valuta&&t.valuta!==t.date?"Valuta "+t.valuta.split("-").reverse().join("."):null].filter(Boolean).join(" · ");
     return '<div class="tx'+(t.dup?' dup':'')+'" data-i="'+i+'">'+catIcon(t.cat)+'<div class="body"><div class="n">'+esc(t.name||t.type)+'</div>'+(t.purpose?'<div class="p">'+esc(t.purpose)+'</div>':'')+'<div class="meta">'+esc(meta)+'</div></div>'+catSelect(t.cat)+'<div class="amt '+(t.amount<0?'':'pos')+'">'+esc(eur(t.amount,{plus:true}))+'</div></div>'; }).join("");
   el.querySelectorAll("select").forEach(s=>s.addEventListener("change",async e=>{
-    const i=Number(e.target.closest(".tx").dataset.i); const t=pending.tx[i]; t.cat=e.target.value; t.userCat=true;
-    // Gleiche Bezeichnung im selben Import mitziehen und als Regel merken
-    const key=(t.name||"").toLowerCase().slice(0,24); if(key.length>=3){ addRule(t.name.slice(0,40),t.cat); pending.tx.forEach(o=>{ if(!o.userCat && (o.name||"").toLowerCase().slice(0,24)===key) o.cat=t.cat; }); }
+    const i=Number(e.target.closest(".tx").dataset.i); const t=pending.tx[i]; const newCat=e.target.value; t.cat=newCat; t.userCat=true;
+    await learnRule(t,newCat,pending.tx);
     // Schon vorhandene Buchungen direkt umbuchen
     if(!locked()){ const days=new Set(); pending.tx.forEach(o=>{ if(!o.dup) return; const r=allRaw().find(x=>x.id===o.id); if(r&&r.cat!==o.cat){ if(isFrozen(ym(r.date))){ applyDelta(r,-1); r.cat=o.cat; applyDelta(r,1); } else r.cat=o.cat; days.add(r.date); } }); if(days.size){ await saveDays([...days]); recomputeSums(); } }
     renderPreview();
   }));
+}
+/* ---------- Aus einer Korrektur eine Regel lernen ---------- */
+function nameKey(n){ return (n||"").toLowerCase().replace(/\s+/g," ").trim().slice(0,24); }
+function purposeHint(t){ const nk=nameKey(t.name); const words=(t.purpose||"").split(/[^A-Za-zÄÖÜäöüß0-9]+/).filter(w=>w.length>=4&&nk.indexOf(w.toLowerCase())<0&&!/^\d+$/.test(w)&&!/^(vom|und|der|die|das|für|von|mit|ihre|ihr|zahlung|kauf|umsatz|lastschrift|gutschrift|danke|sagt|paypal|europe|sarl)$/i.test(w)); return words.sort((a,b)=>b.length-a.length)[0]||""; }
+async function learnRule(t,newCat,batch,kwOverride){
+  const kw=(kwOverride||t.name||"").trim().slice(0,40); if(kw.length<3) return;
+  const inName=(t.name||"").toLowerCase().indexOf(kw.toLowerCase())>=0; const field=inName?"name":"any"; const d=dirOf(t.amount);
+  const sameName=(batch||[]).filter(o=>o!==t&&nameKey(o.name)===nameKey(t.name));
+  const conflicts=cfg.rules.filter(r=>r.cat!==newCat&&ruleMatches(r,t.name,t.purpose,t.type,t.amount));
+  if(!conflicts.length){
+    addRule(kw,newCat,{dir:d,field:field});
+    sameName.forEach(o=>{ if(!o.userCat&&dirOf(o.amount)===d) o.cat=newCat; });
+    return;
+  }
+  const choice=await askRuleScope(t,newCat,conflicts);
+  if(!choice||choice.mode==="once") return;
+  if(choice.mode==="always"){ cfg.rules=cfg.rules.filter(r=>conflicts.indexOf(r)<0); addRule(kw,newCat,{dir:d,field:field}); sameName.forEach(o=>{ if(!o.userCat&&dirOf(o.amount)===d) o.cat=newCat; }); }
+  else if(choice.mode==="kw2"){ addRule(kw,newCat,{dir:d,field:field,kw2:choice.kw2}); sameName.forEach(o=>{ if(!o.userCat&&dirOf(o.amount)===d&&((o.purpose||"")+" "+(o.name||"")).toLowerCase().indexOf(choice.kw2.toLowerCase())>=0) o.cat=newCat; }); }
+  else if(choice.mode==="amt"){ addRule(kw,newCat,{dir:d,field:field,min:choice.min,max:choice.max}); sameName.forEach(o=>{ const ab=Math.abs(o.amount); if(!o.userCat&&dirOf(o.amount)===d&&ab>=choice.min&&ab<=choice.max) o.cat=newCat; }); }
+  saveCfg();
+}
+function askRuleScope(t,newCat,conflicts){
+  return new Promise(res=>{
+    const ex=conflicts[0]; const hint=purposeHint(t); const ab=Math.abs(t.amount); const lo=Math.floor(ab*0.8), hi=Math.ceil(ab*1.2);
+    $("rcText").innerHTML='Für <b>'+esc(t.name)+'</b> gilt bisher: '+esc(cat(ex.cat).icon+" "+cat(ex.cat).name)+' ('+esc(ruleText(ex))+'). Diese Buchung soll nach '+esc(cat(newCat).icon+" "+cat(newCat).name)+'.';
+    const opts=[
+      {m:"once",t:"Nur diese Buchung",s:"Die bisherige Regel bleibt, wie sie ist."},
+      {m:"kw2",t:"Wenn der Zweck ein Stichwort enthält",s:"Etwa das Produkt oder der Händler hinter PayPal.",input:hint},
+      {m:"amt",t:"Bei Beträgen in diesem Bereich",s:"Etwa Gehalt hoch, Abzüge klein.",range:[lo,hi]},
+      {m:"always",t:"Ab jetzt immer so",s:"Ersetzt die bisherige Regel für diese Richtung."}
+    ];
+    let sel=hint?"kw2":"amt";
+    $("rcOpts").innerHTML=opts.map(o=>'<button type="button" class="rcopt'+(o.m===sel?' on':'')+'" data-m="'+o.m+'"><span class="dot"></span><div style="flex:1"><b>'+esc(o.t)+'</b><span>'+esc(o.s)+'</span>'+(o.input!=null?'<input id="rcKw2" value="'+esc(o.input)+'" placeholder="Stichwort im Zweck">':'')+(o.range?'<div class="row" style="gap:6px"><input id="rcMin" inputmode="decimal" value="'+o.range[0]+'" placeholder="von €"><input id="rcMax" inputmode="decimal" value="'+o.range[1]+'" placeholder="bis €"></div>':'')+'</div></button>').join("");
+    const btns=$("rcOpts").querySelectorAll(".rcopt"); btns.forEach(b=>b.addEventListener("click",e=>{ sel=b.dataset.m; btns.forEach(x=>x.classList.toggle("on",x===b)); }));
+    const ok=$("rcOk"), cn=$("rcCancel"); const done=v=>{ ok.removeEventListener("click",h); cn.removeEventListener("click",c2); $("rcOv").classList.remove("open"); res(v); };
+    const h=()=>{ if(sel==="kw2"){ const v=($("rcKw2").value||"").trim(); if(!v){ $("rcKw2").focus(); return; } return done({mode:"kw2",kw2:v}); } if(sel==="amt"){ const mn=parseAmt($("rcMin").value), mx=parseAmt($("rcMax").value); if(!isFinite(mn)||!isFinite(mx)||mn>mx){ $("rcMin").focus(); return; } return done({mode:"amt",min:mn,max:mx}); } done({mode:sel}); };
+    const c2=()=>done(null); ok.addEventListener("click",h); cn.addEventListener("click",c2); $("rcOv").classList.add("open");
+  });
 }
 async function commitImport(){
   if(!pending||locked()) return;
@@ -951,7 +1029,7 @@ function openTx(t){
   $("txName").value=editTx.name||""; $("txPurpose").value=editTx.purpose||""; $("txDate").value=editTx.date;
   $("txAmount").value=t?String(editTx.amount).replace(".",","):"";
   $("txAcc").innerHTML=cfg.accounts.map(a=>'<option value="'+a.id+'"'+(a.id===editTx.acc?' selected':'')+'>'+esc(a.name)+'</option>').join("");
-  $("txRule").classList.remove("on"); $("txDel").style.display=t?"":"none"; $("txErr").textContent="";
+  $("txRule").classList.remove("on"); $("txRuleKw").value=(editTx.name||"").slice(0,40); $("txRuleWrap").style.display="none"; $("txDel").style.display=t?"":"none"; $("txErr").textContent="";
   renderCatPick(); $("txOv").classList.add("open");
 }
 function renderCatPick(){ $("txCats").innerHTML=cfg.categories.map(c=>'<button type="button" data-c="'+c.id+'" class="'+(c.id===editTx.cat?'on':'')+'">'+catIcon(c)+'<span>'+esc(c.name.split(" &")[0].split(" ")[0])+'</span></button>').join(""); $("txCats").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ editTx.cat=b.dataset.c; renderCatPick(); })); }
@@ -966,7 +1044,7 @@ async function saveTx(){
   const t={id:editTx.id||("m"+uid()),acc:$("txAcc").value,date:date,valuta:date,type:editTx.type||"Manuell",name:name,purpose:$("txPurpose").value.trim(),amount:Math.round(amount*100)/100,cat:editTx.cat,manual:editTx.manual||!!editTx.manual,src:editTx.src||"man"};
   if(!editTx.id) t.id=await txId(t);
   (rawCache[date]=rawCache[date]||[]).push(t); days.add(date); if(isFrozen(ym(date))) applyDelta(t,1);
-  if($("txRule").classList.contains("on")) addRule(name.slice(0,40),t.cat);
+  if($("txRule").classList.contains("on")){ const kw=$("txRuleKw").value.trim()||name.slice(0,40); await learnRule(t,t.cat,[],kw); }
   await saveDays([...days]); recomputeSums(); $("txOv").classList.remove("open"); renderAll(); toast("Gesichert");
 }
 async function deleteTx(){
@@ -1160,7 +1238,8 @@ async function deleteCat1(){
   if(!locked()){ const days=new Set(); allRaw().forEach(t=>{ if(t.cat===id){ t.cat="sonstiges"; days.add(t.date); } }); if(days.size){ await saveDays([...days]); recomputeSums(); } }
   saveCfg(); $("cat1Ov").classList.remove("open"); renderCatEdit(); renderAll();
 }
-function renderRules(){ $("ruleCat").innerHTML=cfg.categories.map(k=>'<option value="'+k.id+'">'+esc(k.icon+" "+k.name)+'</option>').join(""); $("ruleList").innerHTML=cfg.rules.length?cfg.rules.map((r,i)=>'<div class="catrow">'+catIcon(r.cat)+'<div class="cat-body"><div class="name">'+esc(r.kw)+'</div><div class="meta">'+esc(cat(r.cat).name)+'</div></div><button type="button" class="btn ghost" data-i="'+i+'">✕</button></div>').join(""):'<div class="empty">Noch keine eigenen Regeln. Sie entstehen, wenn du im Import oder in einer Buchung eine Kategorie setzt.</div>'; $("ruleList").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ cfg.rules.splice(Number(b.dataset.i),1); saveCfg(); renderRules(); })); }
+const DIR_LBL={any:"Ausgaben und Gutschriften",out:"nur Ausgaben",in:"nur Gutschriften"}, FIELD_LBL={any:"überall",name:"im Empfänger",purpose:"im Verwendungszweck"};
+function renderRules(){ $("ruleCat").innerHTML=cfg.categories.map(k=>'<option value="'+k.id+'">'+esc(k.icon+" "+k.name)+'</option>').join(""); $("ruleList").innerHTML=cfg.rules.length?cfg.rules.map((r,i)=>'<div class="catrow">'+catIcon(r.cat)+'<div class="cat-body"><div class="name">'+esc(r.kw)+'</div><div class="meta">'+esc(cat(r.cat).name)+' · '+esc(ruleText(r))+'</div></div><button type="button" class="btn ghost" data-i="'+i+'">✕</button></div>').join(""):'<div class="empty">Noch keine eigenen Regeln. Sie entstehen, wenn du im Import oder in einer Buchung eine Kategorie setzt.</div>'; $("ruleList").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ cfg.rules.splice(Number(b.dataset.i),1); saveCfg(); renderRules(); })); }
 /* ---------- Abgleich (verschlüsselt, privater Gist), nur wenn entsperrt ---------- */
 const GH_API="https://api.github.com", GIST_DESC="riznica-sync", GIST_FILE="riznica.json";
 let syncCfg=read(SYNC,null), syncTimer=null, syncBusy=false, lastPushed="";
@@ -1288,7 +1367,7 @@ function wire(){
   $("txSearch").addEventListener("input",()=>{ txFilterCat=null; renderTx(); });
   $("txAdd").addEventListener("click",()=>{ if(!cfg.accounts.length){ toast("Erst ein Konto anlegen"); return; } openTx(null); });
   $("txSave").addEventListener("click",saveTx); $("txCancel").addEventListener("click",()=>$("txOv").classList.remove("open")); $("txDel").addEventListener("click",deleteTx);
-  $("txRule").addEventListener("click",()=>$("txRule").classList.toggle("on"));
+  $("txRule").addEventListener("click",()=>{ $("txRule").classList.toggle("on"); $("txRuleWrap").style.display=$("txRule").classList.contains("on")?"":"none"; });
   // Konten
   $("accAdd").addEventListener("click",()=>openAcc(null)); $("accSave").addEventListener("click",saveAcc); $("accCancel").addEventListener("click",()=>$("accOv").classList.remove("open")); $("accDel").addEventListener("click",deleteAcc);
   // Schutz
@@ -1309,7 +1388,7 @@ function wire(){
   $("c1Save").addEventListener("click",saveCat1); $("c1Cancel").addEventListener("click",()=>$("cat1Ov").classList.remove("open")); $("c1Del").addEventListener("click",deleteCat1);
   ["c1Fix","c1In","c1Tr"].forEach(id=>$(id).addEventListener("click",()=>{ $(id).classList.toggle("on"); if(id!=="c1Fix"&&$(id).classList.contains("on")){ ["c1Fix","c1In","c1Tr"].filter(x=>x!==id).forEach(x=>$(x).classList.remove("on")); } }));
   $("rulesItem").addEventListener("click",()=>{ renderRules(); $("ruleOv").classList.add("open"); }); $("ruleClose").addEventListener("click",()=>$("ruleOv").classList.remove("open"));
-  $("ruleAdd").addEventListener("click",()=>{ addRule($("ruleKw").value,$("ruleCat").value); $("ruleKw").value=""; renderRules(); });
+  $("ruleAdd").addEventListener("click",()=>{ if(!$("ruleKw").value.trim()) return; const mn=parseAmt($("ruleMin").value), mx=parseAmt($("ruleMax").value); const opt={dir:$("ruleDir").value,field:$("ruleField").value}; if(isFinite(mn)) opt.min=mn; if(isFinite(mx)) opt.max=mx; if($("ruleKw2").value.trim()) opt.kw2=$("ruleKw2").value.trim(); addRule($("ruleKw").value,$("ruleCat").value,opt); ["ruleKw","ruleMin","ruleMax","ruleKw2"].forEach(id=>$(id).value=""); renderRules(); });
   // Ansicht, Sicherung
   document.querySelectorAll("#themeSeg button").forEach(b=>b.addEventListener("click",()=>{ cfg.theme=b.dataset.t; saveCfg(); applyTheme(); renderMore(); }));
   $("bakOut").addEventListener("click",backupOut); $("bakIn").addEventListener("click",()=>$("bakFile").click()); $("bakFile").addEventListener("change",e=>{ if(e.target.files[0]) backupIn(e.target.files[0]); }); $("wipe").addEventListener("click",wipeAll);
