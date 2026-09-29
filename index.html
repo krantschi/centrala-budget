@@ -245,6 +245,9 @@
   .hint{font-size:12.5px; color:var(--ink-faint); line-height:1.45; margin-top:8px}
   .pw-dots{font-family:var(--mono)}
   .view{display:none; flex-direction:column; gap:14px} .view.active{display:flex}
+  /* Vorhang: verdeckt den Inhalt, sobald die App in den Hintergrund geht, damit Tab- und App-Vorschaubilder leer sind */
+  #curtain{position:fixed; inset:0; z-index:100; background:var(--bg-1); display:none; align-items:center; justify-content:center; font-family:var(--serif); font-size:26px; font-weight:600; color:var(--ink-faint)}
+  body.covered #curtain{display:flex}
   .err{color:var(--rose); font-size:13px; margin-top:6px; min-height:16px}
   .num{font-variant-numeric:tabular-nums}
 </style>
@@ -347,9 +350,10 @@
       <h2>Schutz</h2>
       <div class="list">
         <div class="item link" id="pwItem"><span>Passwort</span><span class="r" id="pwState"></span></div>
+        <div class="item link" id="pinItem"><span>Kurz-Code für dieses Gerät</span><span class="r" id="pinState"></span></div>
         <div class="item"><span>Buchungen sichtbar</span><span class="r"><select id="retSel" style="width:120px"><option value="30">30 Tage</option><option value="100">100 Tage</option><option value="180">180 Tage</option><option value="365">1 Jahr</option><option value="730">2 Jahre</option></select></span></div>
         <div class="item link" id="archItem"><span>Archiv-Passwort</span><span class="r" id="archState"></span></div>
-        <div class="item"><span>Automatisch sperren</span><span class="r"><select id="autoLock" style="width:120px"><option value="0">nie</option><option value="5">5 Min</option><option value="15">15 Min</option><option value="60">1 Std</option></select></span></div>
+        <div class="item"><span>Automatisch sperren</span><span class="r"><select id="autoLock" style="width:140px"><option value="-1">beim Verlassen</option><option value="5">5 Min</option><option value="15">15 Min</option><option value="60">1 Std</option><option value="0">nie</option></select></span></div>
       </div>
       <div class="hint" id="retHint"></div>
     </div>
@@ -375,11 +379,11 @@
     <div class="card">
       <h2>Sicherung</h2>
       <div class="list">
-        <div class="item link" id="bakOut"><span>Alles in eine Datei sichern</span><span class="r"></span></div>
+        <div class="item link" id="bakOut"><span>Alles in eine Datei sichern</span><span class="r">verschlüsselt</span></div>
         <div class="item link" id="bakIn"><span>Aus Datei wiederherstellen</span><span class="r"></span></div>
         <div class="item link" id="wipe"><span class="neg">Alle Daten löschen</span><span class="r"></span></div>
       </div>
-      <input type="file" id="bakFile" accept="application/json,.json" style="display:none">
+      <input type="file" id="bakFile" accept=".rzb,application/json,.json" style="display:none">
       <div class="hint" id="verInfo"></div>
     </div>
   </section>
@@ -397,7 +401,9 @@
 <div class="ov" id="pwOv"><div class="sheet"><div class="grabber"></div>
   <h3 id="pwTitle">Entsperren</h3>
   <p class="muted small" id="pwText"></p>
+  <div id="pinWrap" style="display:none"><label>Kurz-Code</label><input type="password" id="pinIn" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" style="text-align:center; font-size:24px; letter-spacing:.4em"></div>
   <label id="pwL1">Passwort</label><input type="password" id="pw1" autocomplete="current-password">
+  <button type="button" class="btn ghost" id="pwSwitch" style="display:none; margin-top:6px; padding:6px 8px; font-size:13px">Passwort verwenden</button>
   <div id="pw2Wrap" style="display:none"><label>Passwort wiederholen</label><input type="password" id="pw2" autocomplete="new-password"></div>
   <div class="err" id="pwErr"></div>
   <div class="actions"><button class="btn" type="button" id="pwCancel">Abbrechen</button><button class="btn primary" type="button" id="pwOk">Weiter</button></div>
@@ -476,6 +482,7 @@
 </div></div>
 
 <div class="toast" id="toast"></div>
+<div id="curtain" aria-hidden="true">Riznica</div>
 <!-- pdf.js 3.11.174 (Apache 2.0, Mozilla), eingebettet: keine Nachladung, kein Worker-Download -->
 <script>
 /**
@@ -680,10 +687,10 @@ function parseINGText(text){
 <script>
 (function(){
 "use strict";
-const APP_VERSION="2026-09-24-13";
+const APP_VERSION="2026-09-29-3";
 /* ---------- Ablage ---------- */
-const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1", ARCH="rz_archive_v1", ARCHK="rz_archive_key_v1";
-const LOCAL_ONLY=[SYNC, UI];                    // bleibt strikt auf dem Gerät
+const CFG="rz_config_v1", CRYPTO="rz_crypto_v1", TX="rz_tx_v1", SUMS="rz_sums_v1", BAL="rz_bal_v1", IDS="rz_ids_v1", SYNC="rz_sync_v1", UI="rz_ui_v1", ARCH="rz_archive_v1", ARCHK="rz_archive_key_v1", PRIV="rz_private_v1", PIN="rz_pin_v1";
+const LOCAL_ONLY=[SYNC, UI, PIN];               // bleibt strikt auf dem Gerät (Kurz-Code nie in Gist oder Sicherung)
 function read(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } }
 function write(k,v){ try{ localStorage.setItem(k,JSON.stringify(v)); }catch(e){ toast("Speicher voll"); } scheduleSync(k); }
 const $=id=>document.getElementById(id);
@@ -753,7 +760,7 @@ if(!cfg.categories||!cfg.categories.length) cfg.categories=DEFAULT_CATS.map(c=>O
 // Nachträglich hinzugekommene Grundkategorien ergänzen, vor Sonstiges (auch nach einem Abgleich)
 function migrateCfg(){ let changed=false; DEFAULT_CATS.forEach(c=>{ if(!cfg.categories.some(x=>x.id===c.id)){ const s=cfg.categories.findIndex(x=>x.id==="sonstiges"); cfg.categories.splice(s<0?cfg.categories.length:s,0,Object.assign({},c)); changed=true; } }); return changed; }
 migrateCfg();
-cfg.rules=cfg.rules||[]; cfg.budgets=cfg.budgets||{}; cfg.accounts=cfg.accounts||[];
+cfg.budgets=cfg.budgets||{}; cfg.accounts=cfg.accounts||[];
 if(!cfg.retention) cfg.retention=365; if(cfg.autoLock==null) cfg.autoLock=15;
 function saveCfg(){ write(CFG,cfg); }
 function cat(id){ return cfg.categories.find(c=>c.id===id)||cfg.categories.find(c=>c.id==="sonstiges")||cfg.categories[cfg.categories.length-1]; }
@@ -772,7 +779,7 @@ function ruleMatches(r,name,purpose,type,amount){
   if(r.kw2 && ((name||"")+" "+(purpose||"")).toLowerCase().indexOf(r.kw2.toLowerCase())<0) return false;
   return true;
 }
-function ownRules(){ return cfg.rules.map((r,i)=>({r:r,i:i})).sort((x,y)=>ruleSpec(y.r)-ruleSpec(x.r)||x.i-y.i).map(x=>x.r); }
+function ownRules(){ return rules().map((r,i)=>({r:r,i:i})).sort((x,y)=>ruleSpec(y.r)-ruleSpec(x.r)||x.i-y.i).map(x=>x.r); }
 function classify(name,purpose,type,amount){
   for(const r of ownRules()){ if(ruleMatches(r,name,purpose,type,amount) && cat(r.cat)) return r.cat; }
   const hay=((name||"")+" "+(purpose||"")+" "+(type||"")).toLowerCase();
@@ -782,12 +789,26 @@ function classify(name,purpose,type,amount){
 }
 function sameRule(a,b){ return a.kw.toLowerCase()===b.kw.toLowerCase()&&(a.dir||"any")===(b.dir||"any")&&(a.field||"any")===(b.field||"any")&&(a.min==null?null:a.min)===(b.min==null?null:b.min)&&(a.max==null?null:a.max)===(b.max==null?null:b.max)&&(a.kw2||"").toLowerCase()===(b.kw2||"").toLowerCase(); }
 function addRule(kw,catId,opt){
-  kw=(kw||"").trim(); if(!kw) return; opt=opt||{};
-  const r={kw:kw,cat:catId,dir:opt.dir||"any",field:opt.field||"any"}; if(opt.min!=null) r.min=opt.min; if(opt.max!=null) r.max=opt.max; if(opt.kw2) r.kw2=opt.kw2;
-  cfg.rules=cfg.rules.filter(x=>!sameRule(x,r)); cfg.rules.unshift(r); saveCfg(); return r;
+  kw=(kw||"").trim(); if(!kw||!priv) return; opt=opt||{}; const dir=opt.dir||"any", field=opt.field||"any";
+  priv.rules=priv.rules.filter(r=>!(r.kw.toLowerCase()===kw.toLowerCase() && (r.dir||"any")===dir && (r.field||"any")===field && !r.kw2 && r.min==null && r.max==null));
+  const r={kw:kw,cat:catId,dir:dir,field:field}; if(opt.min!=null) r.min=opt.min; if(opt.max!=null) r.max=opt.max; if(opt.kw2) r.kw2=opt.kw2;
+  priv.rules.unshift(r); savePriv();
 }
 function dirOf(amount){ return amount<0?"out":"in"; }
 function ruleText(r){ const p=[]; p.push({any:"überall",name:"im Empfänger",purpose:"im Zweck"}[r.field||"any"]); p.push({any:"beide Richtungen",out:"nur Ausgaben",in:"nur Gutschriften"}[r.dir||"any"]); if(r.min!=null&&r.max!=null) p.push(eur0(r.min)+" bis "+eur0(r.max)); else if(r.min!=null) p.push("ab "+eur0(r.min)); else if(r.max!=null) p.push("bis "+eur0(r.max)); if(r.kw2) p.push("Zweck „"+r.kw2+"“"); return p.join(" · "); }
+/* ---------- Privater Block: Regeln und IBAN-Endziffern, verschlüsselt, nur entsperrt im Speicher ---------- */
+let priv=null;   // {rules:[], ibans:{accId:"4711"}}
+function rules(){ return priv?priv.rules:[]; }
+async function loadPriv(){
+  priv={rules:[],ibans:{}}; const p=read(PRIV,null);
+  if(p&&p.ct){ try{ priv=Object.assign({rules:[],ibans:{}},JSON.parse(await decKey(sessKey,p))); }catch(e){} }
+  // Altbestand aus der Klartext-Konfiguration übernehmen und dort entfernen
+  let moved=false;
+  if(cfg.rules&&cfg.rules.length){ priv.rules=cfg.rules.concat(priv.rules); moved=true; }
+  cfg.accounts.forEach(x=>{ if(x.iban){ priv.ibans[x.id]=x.iban; delete x.iban; moved=true; } });
+  if(moved||cfg.rules){ delete cfg.rules; saveCfg(); await savePriv(); }
+}
+async function savePriv(){ if(!sessKey||!priv) return; write(PRIV,await encKey(sessKey,JSON.stringify(priv))); }
 /* ---------- Verschlüsselung (AES-GCM, PBKDF2) wie bei Centrala ---------- */
 const subtle=()=>(window.crypto&&window.crypto.subtle)?window.crypto.subtle:null;
 function b64(buf){ let s=""; const b=new Uint8Array(buf); for(let i=0;i<b.length;i++) s+=String.fromCharCode(b[i]); return btoa(s); }
@@ -805,14 +826,14 @@ async function sha(s){ const h=await subtle().digest("SHA-256",new TextEncoder()
 let sessKey=null, sessPw=null, lockTimer=null, cryptoCfg=read(CRYPTO,null);
 function locked(){ return !sessKey; }
 function touchLock(){ clearTimeout(lockTimer); if(!locked() && cfg.autoLock>0) lockTimer=setTimeout(lock, cfg.autoLock*60000); }
-function lock(){ sessKey=null; sessPw=null; rawCache=null; archCache=null; archKey=null; idsCache=null; clearTimeout(lockTimer); try{ discardPending(); }catch(e){} renderLock(); renderAll(); }
+function lock(){ sessKey=null; sessPw=null; rawCache=null; archCache=null; archKey=null; idsCache=null; priv=null; clearTimeout(lockTimer); try{ discardPending(); }catch(e){} renderLock(); renderAll(); }
 async function unlockWith(pw){
   if(!cryptoCfg){ // erstes Passwort
     const salt=window.crypto.getRandomValues(new Uint8Array(16));
     const key=await deriveKey(pw,salt,KDF_IT);
     const check=await encKey(key,"riznica");
     cryptoCfg={salt:b64(salt),check:check,it:KDF_IT}; write(CRYPTO,cryptoCfg);
-    sessKey=key; sessPw=pw; rawCache={}; await loadIds(); touchLock(); return true;
+    sessKey=key; sessPw=pw; rawCache={}; await loadIds(); await loadPriv(); touchLock(); return true;
   }
   const key=await deriveKey(pw,unb64(cryptoCfg.salt),cryptoCfg.it||KDF_IT);
   try{ const t=await decKey(key,cryptoCfg.check); if(t!=="riznica") return false; }catch(e){ return false; }
@@ -820,28 +841,53 @@ async function unlockWith(pw){
   await loadRaw();
   return true;
 }
-let pwResolve=null;
+/* ---------- Kurz-Code: verpackt das Passwort nur auf diesem Gerät ---------- */
+const PIN_IT=1000000, PIN_MAX_FAILS=5;
+function pinCfg(){ return read(PIN,null); }
+async function setPin(code){ if(!sessPw) return false; const salt=window.crypto.getRandomValues(new Uint8Array(16)); const k=await deriveKey(code,salt,PIN_IT); const wrap=await encKey(k,sessPw); localStorage.setItem(PIN,JSON.stringify({salt:b64(salt),it:PIN_IT,wrap:wrap,fails:0})); return true; }
+function clearPin(){ localStorage.removeItem(PIN); }
+async function unlockWithPin(code){
+  const p=pinCfg(); if(!p) return "none";
+  try{ const k=await deriveKey(code,unb64(p.salt),p.it||PIN_IT); const pw=await decKey(k,p.wrap); const ok=await unlockWith(pw); if(ok){ p.fails=0; localStorage.setItem(PIN,JSON.stringify(p)); return "ok"; } }catch(e){}
+  p.fails=(p.fails||0)+1; if(p.fails>=PIN_MAX_FAILS){ clearPin(); return "wiped"; } localStorage.setItem(PIN,JSON.stringify(p)); return "bad";
+}
+let pwResolve=null, pinMode=false;
+function showPinUi(on){ pinMode=on; $("pinWrap").style.display=on?"":"none"; $("pwL1").style.display=on?"none":""; $("pw1").style.display=on?"none":""; $("pwSwitch").style.display=on?"":"none"; $("pwSwitch").textContent="Passwort verwenden"; if(on) setTimeout(()=>$("pinIn").focus(),80); }
 function askPassword(mode,text){
   return new Promise(res=>{
     pwResolve=res;
     const create=mode==="create";
     $("pwTitle").textContent=create?"Passwort festlegen":(mode==="change"?"Neues Passwort":"Entsperren");
-    $("pwText").textContent=text||(create?"Damit werden alle Buchungen verschlüsselt. Es lässt sich nicht wiederherstellen, also gut merken.":"");
+    $("pwText").textContent=text||(create?"Damit werden alle Buchungen verschlüsselt. Es lässt sich nicht wiederherstellen, also gut merken. Am besten eine Passphrase aus drei, vier Wörtern.":"");
     $("pw2Wrap").style.display=(create||mode==="change")?"":"none";
-    $("pw1").value=""; $("pw2").value=""; $("pwErr").textContent="";
+    $("pw1").value=""; $("pw2").value=""; $("pinIn").value=""; $("pwErr").textContent="";
     $("pw1").autocomplete=create?"new-password":"current-password";
-    $("pwOv").classList.add("open"); setTimeout(()=>$("pw1").focus(),80);
+    const usePin=mode==="unlock"&&!!pinCfg(); showPinUi(usePin); if(!usePin) $("pwSwitch").style.display="none";
+    $("pwOv").classList.add("open"); if(!usePin) setTimeout(()=>$("pw1").focus(),80);
   });
 }
+async function pinSubmit(){
+  const code=$("pinIn").value.trim(); if(!/^\d{4,6}$/.test(code)){ $("pwErr").textContent="4 bis 6 Ziffern."; return; }
+  $("pwOk").disabled=true; $("pwErr").textContent="prüft …";
+  const r=await unlockWithPin(code); $("pwOk").disabled=false;
+  if(r==="ok"){ try{ if(window.__onUnlock) await window.__onUnlock(); }catch(e){} $("pwErr").textContent=""; $("pwOv").classList.remove("open"); renderLock(); renderAll(); const f=pwResolve; pwResolve=null; if(f) f(true); return; }
+  if(r==="wiped"){ $("pwErr").textContent="Fünf Fehlversuche, der Kurz-Code wurde gelöscht. Bitte das Passwort eingeben."; showPinUi(false); $("pwSwitch").style.display="none"; setTimeout(()=>$("pw1").focus(),80); return; }
+  const p=pinCfg(); $("pwErr").textContent="Code stimmt nicht"+(p?" ("+(PIN_MAX_FAILS-(p.fails||0))+" Versuche übrig)":"")+"."; $("pinIn").value="";
+}
+let pwFails=0;
+function pwStrength(p){ let s=0; if(p.length>=10) s++; if(p.length>=14) s++; if(/[a-z]/.test(p)&&/[A-Z]/.test(p)) s++; if(/\d/.test(p)) s++; if(/[^A-Za-z0-9]/.test(p)) s++; if(/\s/.test(p)&&p.length>=16) s++; return s; }
 async function pwSubmit(){
   const p1=$("pw1").value, p2=$("pw2").value, create=$("pw2Wrap").style.display!=="none";
-  if(p1.length<6){ $("pwErr").textContent="Mindestens 6 Zeichen."; return; }
+  if(create && p1.length<10){ $("pwErr").textContent="Mindestens 10 Zeichen. Eine Passphrase aus mehreren Wörtern ist am stärksten."; return; }
+  if(!create && p1.length<6){ $("pwErr").textContent="Passwort eingeben."; return; }
   if(create && p1!==p2){ $("pwErr").textContent="Die Passwörter stimmen nicht überein."; return; }
+  if(create && pwStrength(p1)<2){ $("pwErr").textContent="Zu schwach: länger machen oder Ziffern, Groß- und Kleinbuchstaben mischen."; return; }
   $("pwOk").disabled=true; $("pwErr").textContent="prüft …";
   try{
-    if(create && cryptoCfg && pwResolve && pwResolve.change){ /* handled by caller */ }
+    if(!create && pwFails>0){ const wait=Math.min(30,Math.pow(2,pwFails-1))*1000; $("pwErr").textContent="Bitte warten ("+Math.round(wait/1000)+" s) …"; await new Promise(r=>setTimeout(r,wait)); }
     const ok=await unlockWith(p1);
-    if(!ok){ $("pwErr").textContent="Passwort stimmt nicht."; $("pwOk").disabled=false; return; }
+    if(!ok){ pwFails++; $("pwErr").textContent="Passwort stimmt nicht."; $("pwOk").disabled=false; return; }
+    pwFails=0;
   }catch(e){ $("pwErr").textContent="Verschlüsselung nicht verfügbar (HTTPS oder lokale Datei nötig)."; $("pwOk").disabled=false; return; }
   try{ if(window.__onUnlock) await window.__onUnlock(); }catch(e){}
   $("pwOk").disabled=false; $("pwErr").textContent=""; $("pwOv").classList.remove("open");
@@ -856,7 +902,7 @@ async function ensureUnlocked(text){
 /* ---------- Rohbuchungen: je Tag ein verschlüsselter Block ---------- */
 let rawCache=null;          // {date:[tx,...]} entschlüsselt, nur wenn offen
 async function loadRaw(){
-  await loadIds();
+  await loadIds(); await loadPriv();
   const store=read(TX,{}); rawCache={};
   for(const d of Object.keys(store)){ try{ rawCache[d]=JSON.parse(await decKey(sessKey,store[d])); }catch(e){ rawCache[d]=[]; } }
 }
@@ -988,7 +1034,7 @@ function wipe(buf){ try{ new Uint8Array(buf).fill(0); }catch(e){} }   // Dateiin
 function discardPending(){ pending=null; if($("impBox")) $("impBox").style.display="none"; if($("impInfo")) $("impInfo").style.display="none"; if($("impList")) $("impList").innerHTML=""; if($("fileIn")) $("fileIn").value=""; }
 let importAccId=null;
 function ingAccounts(){ return cfg.accounts.filter(x=>x.bank==="ing"); }
-function matchIban(iban){ if(!iban) return null; const tail=iban.replace(/\s/g,"").slice(-4); return cfg.accounts.find(x=>x.iban && x.iban.replace(/\s/g,"").slice(-4)===tail)||null; }
+function matchIban(iban){ if(!iban||!priv) return null; const tail=iban.replace(/\s/g,"").slice(-4); const id=Object.keys(priv.ibans).find(k=>(priv.ibans[k]||"").slice(-4)===tail); return id?acc(id):null; }
 async function handleFiles(files,chosen){
   if(!files||!files.length) return;
   files=[...files]; try{ $("fileIn").value=""; }catch(e){}   // Verweis auf die Datei sofort loslassen
@@ -1073,7 +1119,7 @@ function renderPreview(){
     const i=Number(bt.dataset.i); const t=pending.tx[i]; const mode=bt.dataset.ask;
     if(mode==="all"){ t.ask.forEach(j=>{ pending.tx[j].cat=t.cat; pending.tx[j].userCat=true; }); addRule(t.name.slice(0,40),t.cat,{dir:dirOf(t.amount),field:"name"}); await applyDupChanges(); }
     else if(mode==="one"){ // Empfänger ist offenbar mehrdeutig: alte Empfänger-Regel dafür entfernen
-      const key=(t.name||"").toLowerCase().slice(0,24); const before=cfg.rules.length; cfg.rules=cfg.rules.filter(r=>!((r.field||"any")==="name" && !r.kw2 && r.min==null && r.max==null && (r.dir||"any")===dirOf(t.amount) && key.indexOf(r.kw.toLowerCase().slice(0,24))===0)); if(cfg.rules.length!==before) saveCfg(); }
+      const key=(t.name||"").toLowerCase().slice(0,24); const before=priv.rules.length; priv.rules=priv.rules.filter(r=>!((r.field||"any")==="name" && !r.kw2 && r.min==null && r.max==null && (r.dir||"any")===dirOf(t.amount) && key.indexOf(r.kw.toLowerCase().slice(0,24))===0)); if(priv.rules.length!==before) savePriv(); }
     else if(mode==="rule"){ renderRules(); $("ruleKw").value=""; $("ruleField").value="purpose"; $("ruleDir").value=dirOf(t.amount); $("ruleCat").value=t.cat; $("ruleHint").textContent="Zweck dieser Buchung: "+(t.purpose||"–")+". Ein Wort daraus als Stichwort eintragen."; $("ruleOv").classList.add("open"); }
     t.ask=null; t.hint=null; renderPreview();
   }));
@@ -1290,11 +1336,11 @@ function accBalance(id){ const b=read(BAL,{})[id]||{}; const ks=Object.keys(b).s
 function renderMore(){
   $("accList").innerHTML=cfg.accounts.length?cfg.accounts.map(a=>{ const bal=accBalance(a.id); return '<div class="acc" data-id="'+a.id+'" style="cursor:pointer"><span class="cicon" style="--c-tint:var(--brass-tint)">'+ACC_ICON[a.type]+'</span><div class="cat-body"><div style="font-weight:500">'+esc(a.name)+(cfg.primary===a.id&&cfg.accounts.length>1?' <span class="faint small">Import-Ziel</span>':'')+'</div><div class="small faint">'+ACC_NAME[a.type]+(a.bank==="ing"?" · ING":" · von Hand")+'</div></div><div class="amt" style="font-weight:600">'+(bal!=null?esc(eur(bal)):'<span class="faint">–</span>')+'</div></div>'; }).join(""):'<div class="empty">Lege dein Girokonto an, dann kann der Import loslegen.</div>';
   $("accList").querySelectorAll(".acc").forEach(el=>el.addEventListener("click",()=>openAcc(acc(el.dataset.id))));
-  $("pwState").textContent=cryptoCfg?"gesetzt":"noch nicht gesetzt";
+  $("pwState").textContent=cryptoCfg?"gesetzt":"noch nicht gesetzt"; $("pinState").textContent=pinCfg()?"aktiv":"aus";
   $("retSel").value=String(cfg.retention); $("autoLock").value=String(cfg.autoLock);
   const ac=archiveConfigured(); $("archState").textContent=ac?"gesetzt":"nicht gesetzt";
   $("retHint").textContent=ac?"Einzelbuchungen bleiben "+cfg.retention+" Tage mit deinem Passwort sichtbar. Ältere wandern verschlüsselt ins Archiv, das nur das Archiv-Passwort öffnet. Monatssummen bleiben immer.":"Einzelbuchungen bleiben "+cfg.retention+" Tage, danach werden sie gelöscht. Mit einem Archiv-Passwort werden sie stattdessen verschlüsselt archiviert. Monatssummen bleiben immer.";
-  $("catsCount").textContent=cfg.categories.length; $("rulesCount").textContent=cfg.rules.length+" eigene";
+  $("catsCount").textContent=cfg.categories.length; $("rulesCount").textContent=priv?priv.rules.length+" eigene":"verschlüsselt";
   $("syncState").textContent=syncConfigured()?"verbunden":"aus";
   document.querySelectorAll("#themeSeg button").forEach(b=>b.classList.toggle("on",b.dataset.t===(cfg.theme||"auto")));
   const store=read(TX,{}); const n=Object.keys(store).length; const na=Object.keys(read(ARCH,{})).length;
@@ -1303,16 +1349,17 @@ function renderMore(){
 let editAcc=null;
 function openAcc(a){
   editAcc=a?Object.assign({},a):{id:null,name:"",type:"giro",bank:"ing",start:null};
-  $("accTitle").textContent=a?"Konto":"Konto anlegen"; $("accN").value=editAcc.name; $("accT").value=editAcc.type; $("accB").value=editAcc.bank; $("accS").value=editAcc.start!=null?String(editAcc.start).replace(".",","):""; $("accI").value=editAcc.iban||""; $("accDel").style.display=a?"":"none"; $("accErr").textContent="";
+  $("accTitle").textContent=a?"Konto":"Konto anlegen"; $("accN").value=editAcc.name; $("accT").value=editAcc.type; $("accB").value=editAcc.bank; $("accS").value=editAcc.start!=null?String(editAcc.start).replace(".",","):""; $("accI").value=(priv&&priv.ibans[editAcc.id])||editAcc.iban||""; $("accI").placeholder=priv||!editAcc.id?"z.B. 4711":"entsperren zum Anzeigen"; $("accDel").style.display=a?"":"none"; $("accErr").textContent="";
   $("accOv").classList.add("open");
 }
-function saveAcc(){
+async function saveAcc(){
   const n=$("accN").value.trim(); if(!n){ $("accErr").textContent="Name fehlt."; return; }
   const s=$("accS").value.trim(); const start=s?parseAmt(s):null; if(s&&!isFinite(start)){ $("accErr").textContent="Kontostand prüfen."; return; }
   const iban=$("accI").value.replace(/\s/g,"").slice(-4);
-  if(editAcc.id){ const a=acc(editAcc.id); a.name=n; a.type=$("accT").value; a.bank=$("accB").value; a.iban=iban||null; const oldStart=a.start; a.start=start;
+  // Gesperrt: Ziffern vorübergehend in der Konfiguration parken, beim nächsten Entsperren wandern sie in den verschlüsselten Block
+  if(editAcc.id){ const a=acc(editAcc.id); a.name=n; a.type=$("accT").value; a.bank=$("accB").value; if(priv){ if(iban) priv.ibans[a.id]=iban; else delete priv.ibans[a.id]; savePriv(); } else if(iban) a.iban=iban; const oldStart=a.start; a.start=start;
     if(oldStart!==start){ const bal=read(BAL,{}); const b=bal[a.id]||{}; const delta=(start||0)-(oldStart||0); Object.keys(b).forEach(k=>{ b[k]=Math.round((b[k]+delta)*100)/100; }); bal[a.id]=b; write(BAL,bal); if(!locked()) recomputeSums(); } }
-  else { const a={id:uid(),name:n,type:$("accT").value,bank:$("accB").value,start:start,iban:iban||null}; cfg.accounts.push(a); if(!cfg.primary) cfg.primary=a.id; }
+  else { const a={id:uid(),name:n,type:$("accT").value,bank:$("accB").value,start:start}; if(iban){ if(priv){ priv.ibans[a.id]=iban; savePriv(); } else a.iban=iban; } cfg.accounts.push(a); if(!cfg.primary) cfg.primary=a.id; }
   saveCfg(); $("accOv").classList.remove("open"); renderAll();
 }
 async function deleteAcc(){
@@ -1320,7 +1367,7 @@ async function deleteAcc(){
   if(!confirm("Konto „"+editAcc.name+"“ löschen? Buchungen, Gegenbuchungen und Kontostände dieses Kontos werden entfernt, seine Monatssummen bleiben in der Ablage.")) return;
   if(!locked()){ const days=new Set(); allRaw().filter(t=>t.acc===id).forEach(t=>{ if(isFrozen(ym(t.date))) applyDelta(t,-1); removeTx(t.id,days); }); if(days.size) await saveDays([...days]); }
   const bal=read(BAL,{}); delete bal[id]; write(BAL,bal);
-  cfg.categories.forEach(c=>{ if(c.mirrorAcc===id) c.mirrorAcc=null; });
+  cfg.categories.forEach(c=>{ if(c.mirrorAcc===id) c.mirrorAcc=null; }); if(priv){ delete priv.ibans[id]; savePriv(); }
   cfg.accounts=cfg.accounts.filter(a=>a.id!==id); if(cfg.primary===id) cfg.primary=(cfg.accounts[0]||{}).id||null; if(viewAcc===id) viewAcc=null; saveCfg(); if(!locked()) recomputeSums(); $("accOv").classList.remove("open"); renderAll();
 }
 /* Kategorien bearbeiten */
@@ -1341,13 +1388,13 @@ async function saveCat1(){
 async function deleteCat1(){
   if(!editCat.id||editCat.id==="sonstiges") { $("c1Err").textContent="Sonstiges bleibt als Auffangbecken."; return; }
   if(!confirm("Kategorie löschen? Buchungen und Summen wandern nach Sonstiges.")) return;
-  const id=editCat.id; cfg.categories=cfg.categories.filter(c=>c.id!==id); delete cfg.budgets[id]; cfg.rules=cfg.rules.filter(r=>r.cat!==id);
+  const id=editCat.id; cfg.categories=cfg.categories.filter(c=>c.id!==id); delete cfg.budgets[id]; if(priv){ priv.rules=priv.rules.filter(r=>r.cat!==id); savePriv(); }
   const sums=read(SUMS,{}); Object.keys(sums).forEach(m=>{ if(m==="_frozen") return; Object.keys(sums[m]).forEach(a=>{ const s=sums[m][a]; if(s[id]){ const o=s.sonstiges=s.sonstiges||{out:0,in:0,n:0}; o.out+=s[id].out; o.in+=s[id].in; o.n+=s[id].n; delete s[id]; } }); }); write(SUMS,sums);
   if(!locked()){ const days=new Set(); allRaw().forEach(t=>{ if(t.cat===id){ t.cat="sonstiges"; days.add(t.date); } }); if(days.size){ await saveDays([...days]); recomputeSums(); } }
   saveCfg(); $("cat1Ov").classList.remove("open"); renderCatEdit(); renderAll();
 }
 const DIR_LBL={any:"Ausgaben und Gutschriften",out:"nur Ausgaben",in:"nur Gutschriften"}, FIELD_LBL={any:"überall",name:"im Empfänger",purpose:"im Verwendungszweck"};
-function renderRules(){ $("ruleCat").innerHTML=cfg.categories.map(k=>'<option value="'+k.id+'">'+esc(k.icon+" "+k.name)+'</option>').join(""); $("ruleList").innerHTML=cfg.rules.length?cfg.rules.map((r,i)=>'<div class="catrow">'+catIcon(r.cat)+'<div class="cat-body"><div class="name">'+esc(r.kw)+'</div><div class="meta">'+esc(cat(r.cat).name)+' · '+esc(ruleText(r))+'</div></div><button type="button" class="btn ghost" data-i="'+i+'">✕</button></div>').join(""):'<div class="empty">Noch keine eigenen Regeln. Sie entstehen, wenn du im Import oder in einer Buchung eine Kategorie setzt.</div>'; $("ruleList").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ cfg.rules.splice(Number(b.dataset.i),1); saveCfg(); renderRules(); })); }
+function renderRules(){ $("ruleCat").innerHTML=cfg.categories.map(k=>'<option value="'+k.id+'">'+esc(k.icon+" "+k.name)+'</option>').join(""); $("ruleList").innerHTML=rules().length?rules().map((r,i)=>'<div class="catrow">'+catIcon(r.cat)+'<div class="cat-body"><div class="name">'+esc(r.kw)+'</div><div class="meta">'+esc(cat(r.cat).name)+' · '+esc(ruleText(r))+'</div></div><button type="button" class="btn ghost" data-i="'+i+'">✕</button></div>').join(""):'<div class="empty">Noch keine eigenen Regeln. Sie entstehen, wenn du im Import oder in einer Buchung eine Kategorie setzt.</div>'; $("ruleList").querySelectorAll("button").forEach(b=>b.addEventListener("click",()=>{ priv.rules.splice(Number(b.dataset.i),1); savePriv(); renderRules(); })); }
 /* ---------- Abgleich (verschlüsselt, privater Gist), nur wenn entsperrt ---------- */
 const GH_API="https://api.github.com", GIST_DESC="riznica-sync", GIST_FILE="riznica.json";
 let syncCfg=read(SYNC,null), syncTimer=null, syncBusy=false, lastPushed="";
@@ -1408,15 +1455,21 @@ async function syncPull(){
 async function syncNow(){ if(!syncConfigured()){ toast("Erst Abgleich einrichten"); return; } if(!(await ensureUnlocked("Der Abgleich verschlüsselt mit deinem Passwort."))) return; await loadToken(); if(!syncCfg.token){ toast("Token nicht lesbar, bitte neu eintragen"); return; } const r=await syncPull(); if(r==="empty"||r==="uptodate") await syncPush(r==="empty"); renderMore(); }
 
 /* ---------- Sicherung in Datei ---------- */
-function backupOut(){
-  const d=collectSync(); const blob=new Blob([JSON.stringify({app:"riznica",v:1,at:new Date().toISOString(),data:d})],{type:"application/json"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="riznica-"+todayStr()+".json"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
+async function backupOut(){
+  if(!(await ensureUnlocked("Die Sicherung wird mit deinem Passwort verschlüsselt."))) return;
+  const salt=window.crypto.getRandomValues(new Uint8Array(16)); const key=await deriveKey(sessPw,salt,KDF_IT);
+  const enc=await encKey(key,JSON.stringify(collectSync()));
+  const blob=new Blob([JSON.stringify({app:"riznica",v:2,at:new Date().toISOString(),salt:b64(salt),it:KDF_IT,iv:enc.iv,ct:enc.ct})],{type:"application/json"});
+  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="riznica-"+todayStr()+".rzb"; document.body.appendChild(a); a.click(); setTimeout(()=>{ URL.revokeObjectURL(a.href); a.remove(); },500);
 }
 async function backupIn(file){
-  try{ const j=JSON.parse(await file.text()); if(!j||j.app!=="riznica"||!j.data) throw 0;
+  try{ const j=JSON.parse(await file.text()); if(!j||j.app!=="riznica") throw 0;
+    let data;
+    if(j.v===2&&j.ct){ const pw=await askArchivePw("Passwort der Sicherung"); if(!pw) return; try{ const key=await deriveKey(pw,unb64(j.salt),j.it||KDF_IT); data=JSON.parse(await decKey(key,{iv:j.iv,ct:j.ct})); }catch(e){ toast("Passwort stimmt nicht"); return; } }
+    else if(j.data){ data=j.data; } else throw 0;
     if(!confirm("Sicherung einspielen? Alle vorhandenen Daten in Riznica werden ersetzt.")) return;
     for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("rz_")===0&&LOCAL_ONLY.indexOf(k)<0) localStorage.removeItem(k); }
-    Object.keys(j.data).forEach(k=>localStorage.setItem(k,j.data[k])); location.reload();
+    Object.keys(data).forEach(k=>localStorage.setItem(k,data[k])); location.reload();
   }catch(e){ toast("Das ist keine Riznica-Sicherung"); }
 }
 function wipeAll(){ if(!confirm("Wirklich alles löschen? Buchungen, Summen, Konten, Regeln, Passwort.")) return; if(!confirm("Letzte Frage. Es gibt kein Zurück.")) return; const del=[]; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf("rz_")===0) del.push(k); } del.forEach(k=>localStorage.removeItem(k)); location.reload(); }
@@ -1425,21 +1478,21 @@ async function changePassword(){
   if(!(await ensureUnlocked("Zuerst das bisherige Passwort."))) return;
   const oldKey=sessKey; const oldPw=sessPw;
   // neues Passwort erfragen
-  const np=await new Promise(res=>{ pwResolve=null; $("pwTitle").textContent="Neues Passwort"; $("pwText").textContent="Alle Buchungen werden damit neu verschlüsselt."; $("pw2Wrap").style.display=""; $("pw1").value=""; $("pw2").value=""; $("pwErr").textContent=""; $("pwOv").classList.add("open");
-    const ok=$("pwOk"), cancel=$("pwCancel"); const h=()=>{ const p1=$("pw1").value,p2=$("pw2").value; if(p1.length<6){ $("pwErr").textContent="Mindestens 6 Zeichen."; return; } if(p1!==p2){ $("pwErr").textContent="Die Passwörter stimmen nicht überein."; return; } ok.removeEventListener("click",h); cancel.removeEventListener("click",c); $("pwOv").classList.remove("open"); res(p1); };
+  const np=await new Promise(res=>{ pwResolve=null; showPinUi(false); $("pwSwitch").style.display="none"; $("pwTitle").textContent="Neues Passwort"; $("pwText").textContent="Alle Buchungen werden damit neu verschlüsselt."; $("pw2Wrap").style.display=""; $("pw1").value=""; $("pw2").value=""; $("pwErr").textContent=""; $("pwOv").classList.add("open");
+    const ok=$("pwOk"), cancel=$("pwCancel"); const h=()=>{ const p1=$("pw1").value,p2=$("pw2").value; if(p1.length<(/Kurz-Code/.test(title)?4:6)){ $("pwErr").textContent=/Kurz-Code/.test(title)?"Mindestens 4 Ziffern.":"Mindestens 6 Zeichen."; return; } if(p1!==p2){ $("pwErr").textContent="Die Passwörter stimmen nicht überein."; return; } ok.removeEventListener("click",h); cancel.removeEventListener("click",c); $("pwOv").classList.remove("open"); res(p1); };
     const c=()=>{ ok.removeEventListener("click",h); cancel.removeEventListener("click",c); $("pwOv").classList.remove("open"); res(null); }; ok.addEventListener("click",h); cancel.addEventListener("click",c); setTimeout(()=>$("pw1").focus(),80); });
   if(!np) return;
   const salt=window.crypto.getRandomValues(new Uint8Array(16)); const key=await deriveKey(np,salt,KDF_IT);
   cryptoCfg={salt:b64(salt),check:await encKey(key,"riznica"),it:KDF_IT}; write(CRYPTO,cryptoCfg);
   await rewrapArchiveForMain(oldKey,key);
-  sessKey=key; sessPw=np; await saveDays(Object.keys(rawCache)); await flushIds(); if(syncCfg){ delete syncCfg.salt; if(syncCfg.token) await storeToken(syncCfg.token); else saveSyncCfg(); }
+  sessKey=key; sessPw=np; await saveDays(Object.keys(rawCache)); await flushIds(); await savePriv(); clearPin(); if(syncCfg){ delete syncCfg.salt; if(syncCfg.token) await storeToken(syncCfg.token); else saveSyncCfg(); }
   toast("Passwort geändert"); renderMore(); syncPush(true);
 }
 
 /* ---------- Archiv-Passwort abfragen (eigener Dialog über das Passwort-Fenster) ---------- */
 function askArchivePw(title,create){
-  return new Promise(res=>{ pwResolve=null; $("pwTitle").textContent=title; $("pwText").textContent=create?"Ein zweites Passwort nur für alte Buchungen. Es ersetzt dein Hauptpasswort nicht.":""; $("pw2Wrap").style.display=create?"":"none"; $("pw1").value=""; $("pw2").value=""; $("pwErr").textContent=""; $("pwOv").classList.add("open");
-    const ok=$("pwOk"), cancel=$("pwCancel"); const h=()=>{ const p1=$("pw1").value,p2=$("pw2").value; if(p1.length<6){ $("pwErr").textContent="Mindestens 6 Zeichen."; return; } if(create&&p1!==p2){ $("pwErr").textContent="Die Passwörter stimmen nicht überein."; return; } done(p1); };
+  return new Promise(res=>{ pwResolve=null; showPinUi(false); $("pwSwitch").style.display="none"; $("pwTitle").textContent=title; $("pwText").textContent=create?(/Kurz-Code/.test(title)?"Nur für dieses Gerät. Nach fünf Fehlversuchen wird er gelöscht, dann gilt wieder das Passwort.":"Ein zweites Passwort nur für alte Buchungen. Es ersetzt dein Hauptpasswort nicht."):""; $("pw2Wrap").style.display=create?"":"none"; $("pw1").value=""; $("pw2").value=""; $("pwErr").textContent=""; $("pwOv").classList.add("open");
+    const ok=$("pwOk"), cancel=$("pwCancel"); const h=()=>{ const p1=$("pw1").value,p2=$("pw2").value; if(p1.length<(/Kurz-Code/.test(title)?4:6)){ $("pwErr").textContent=/Kurz-Code/.test(title)?"Mindestens 4 Ziffern.":"Mindestens 6 Zeichen."; return; } if(create&&p1!==p2){ $("pwErr").textContent="Die Passwörter stimmen nicht überein."; return; } done(p1); };
     const cn=()=>done(null); const done=v=>{ ok.removeEventListener("click",h); cancel.removeEventListener("click",cn); $("pwOv").classList.remove("open"); res(v); };
     ok.addEventListener("click",h); cancel.addEventListener("click",cn); setTimeout(()=>$("pw1").focus(),80); });
 }
@@ -1467,7 +1520,18 @@ function wire(){
   $("txUnlock").addEventListener("click",async()=>{ if(await ensureUnlocked()) afterUnlock(); });
   // Import-Freigabe und Auto-Aktionen nach jedem Entsperren, egal von wo es kam
   window.__onUnlock=async()=>{ if(syncCfg&&syncCfg.legacyToken){ await storeToken(syncCfg.legacyToken); delete syncCfg.legacyToken; } await loadToken(); };
-  $("pwOk").addEventListener("click",()=>{ if(pwResolve) pwSubmit(); });
+  $("pwOk").addEventListener("click",()=>{ if(pwResolve){ if(pinMode) pinSubmit(); else pwSubmit(); } });
+  $("pinIn").addEventListener("keydown",e=>{ if(e.key==="Enter"&&pwResolve) pinSubmit(); });
+  $("pinIn").addEventListener("input",()=>{ if(pwResolve&&$("pinIn").value.length===6) pinSubmit(); });
+  $("pwSwitch").addEventListener("click",()=>{ if(pinMode){ showPinUi(false); $("pwSwitch").style.display=""; $("pwSwitch").textContent="Kurz-Code verwenden"; setTimeout(()=>$("pw1").focus(),50); } else { showPinUi(true); } });
+  $("pinItem").addEventListener("click",async()=>{
+    if(pinCfg()){ if(confirm("Kurz-Code auf diesem Gerät entfernen?")){ clearPin(); renderMore(); } return; }
+    if(!(await ensureUnlocked("Zuerst das Passwort, dann den Kurz-Code für dieses Gerät."))) return;
+    const code=await askArchivePw("Kurz-Code festlegen (4 bis 6 Ziffern)",true); if(!code) return;
+    if(!/^\d{4,6}$/.test(code)){ toast("Bitte 4 bis 6 Ziffern"); return; }
+    if(/^(\d)\1+$/.test(code)||"0123456789".indexOf(code)>=0||"9876543210".indexOf(code)>=0){ toast("Zu einfach, bitte einen anderen Code"); return; }
+    if(await setPin(code)) toast("Kurz-Code aktiv, gilt nur auf diesem Gerät"); renderMore();
+  });
   $("pw1").addEventListener("keydown",e=>{ if(e.key==="Enter"){ if($("pw2Wrap").style.display==="none"){ if(pwResolve) pwSubmit(); else $("pwOk").click(); } else $("pw2").focus(); } });
   $("pw2").addEventListener("keydown",e=>{ if(e.key==="Enter") $("pwOk").click(); });
   $("pwCancel").addEventListener("click",()=>{ $("pwOv").classList.remove("open"); const r=pwResolve; pwResolve=null; if(r) r(false); });
@@ -1507,7 +1571,7 @@ function wire(){
   $("catClose").addEventListener("click",()=>$("catOv").classList.remove("open")); $("catAdd").addEventListener("click",()=>openCat1(null));
   $("c1Save").addEventListener("click",saveCat1); $("c1Cancel").addEventListener("click",()=>$("cat1Ov").classList.remove("open")); $("c1Del").addEventListener("click",deleteCat1);
   ["c1Fix","c1In","c1Tr"].forEach(id=>$(id).addEventListener("click",()=>{ $(id).classList.toggle("on"); if(id!=="c1Fix"&&$(id).classList.contains("on")){ ["c1Fix","c1In","c1Tr"].filter(x=>x!==id).forEach(x=>$(x).classList.remove("on")); } updateMirrorRow(); }));
-  $("rulesItem").addEventListener("click",()=>{ renderRules(); $("ruleHint").textContent=""; $("ruleOv").classList.add("open"); }); $("ruleClose").addEventListener("click",()=>$("ruleOv").classList.remove("open"));
+  $("rulesItem").addEventListener("click",async()=>{ if(!(await ensureUnlocked("Regeln liegen verschlüsselt ab."))) return; renderRules(); $("ruleHint").textContent=""; $("ruleOv").classList.add("open"); }); $("ruleClose").addEventListener("click",()=>$("ruleOv").classList.remove("open"));
   $("ruleAdd").addEventListener("click",()=>{ if(!$("ruleKw").value.trim()) return; const mn=parseAmt($("ruleMin").value), mx=parseAmt($("ruleMax").value); const opt={dir:$("ruleDir").value,field:$("ruleField").value}; if(isFinite(mn)) opt.min=mn; if(isFinite(mx)) opt.max=mx; if($("ruleKw2").value.trim()) opt.kw2=$("ruleKw2").value.trim(); addRule($("ruleKw").value,$("ruleCat").value,opt); ["ruleKw","ruleMin","ruleMax","ruleKw2"].forEach(id=>$(id).value=""); renderRules();
     // Vorschau nach der neuen Regel neu einordnen, aber nur, was du nicht selbst gesetzt hast
     if(pending){ pending.tx.forEach(t=>{ if(!t.userCat) t.cat=classify(t.name,t.purpose,t.type,t.amount); }); renderPreview(); } });
@@ -1517,7 +1581,9 @@ function wire(){
   // Overlays per Tipp auf den Hintergrund schließen
   document.querySelectorAll(".ov").forEach(ov=>ov.addEventListener("click",e=>{ if(e.target===ov&&ov.id!=="pwOv") ov.classList.remove("open"); }));
   ["click","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,touchLock,{passive:true}));
-  document.addEventListener("visibilitychange",()=>{ if(document.hidden){ if(!locked()&&cfg.autoLock>0){ hiddenAt=Date.now(); } } else if(hiddenAt&&!locked()&&cfg.autoLock>0&&Date.now()-hiddenAt>cfg.autoLock*60000){ lock(); } });
+  const cover=on=>document.body.classList.toggle("covered",on);
+  window.addEventListener("pagehide",()=>cover(true)); window.addEventListener("blur",()=>{ if(!locked()) cover(true); }); window.addEventListener("focus",()=>cover(false)); window.addEventListener("pageshow",()=>cover(false));
+  document.addEventListener("visibilitychange",()=>{ cover(document.hidden); if(document.hidden){ if(!locked()&&cfg.autoLock<0){ lock(); return; } if(!locked()&&cfg.autoLock>0){ hiddenAt=Date.now(); } } else if(hiddenAt&&!locked()&&cfg.autoLock>0&&Date.now()-hiddenAt>cfg.autoLock*60000){ lock(); } });
 }
 let hiddenAt=0;
 /* ---------- Offline-Speicher ---------- */
